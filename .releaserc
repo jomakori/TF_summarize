@@ -1,0 +1,35 @@
+branches:
+  - main
+
+plugins:
+  - "@semantic-release/commit-analyzer"
+  - "@semantic-release/release-notes-generator"
+  - "@semantic-release/github"
+  - "@semantic-release/git"
+
+preset: "angular"
+
+releaseRules:
+  # Major Release
+  - breaking: true
+    release: major
+
+  # Minor Release
+  - type: feat
+    release: minor
+  - type: refactor
+    release: minor
+  - type: revert
+    release: minor
+
+  # Patch Release
+  - type: fix
+    release: patch
+  - type: docs
+    release: patch
+  - type: chore
+    release: patch
+  - type: style
+    release: patch
+  - type: ci
+    release: patch
