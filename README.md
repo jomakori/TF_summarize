@@ -1,4 +1,4 @@
-# tfplan-summary
+# tf-summarize
 
 A small Go CLI that parses Terraform `plan` and `apply` output and produces a
 beautified Markdown summary — suitable for GitHub Actions step summaries or
@@ -8,14 +8,14 @@ PR comments.
 
 ```bash
 # Pipe terraform plan output
-terraform plan -no-color | tfplan-summary
+terraform plan -no-color | tf-summarize
 
 # Or point to a saved output file
 terraform plan -no-color -out=plan.out > plan.txt
-TF_PLAN_FILE=plan.txt tfplan-summary
+TF_PLAN_FILE=plan.txt tf-summarize
 
 # Apply phase
-terraform apply -no-color -auto-approve 2>&1 | TF_PHASE=apply tfplan-summary
+terraform apply -no-color -auto-approve 2>&1 | TF_PHASE=apply tf-summarize
 ```
 
 ## Environment Variables
@@ -54,7 +54,7 @@ jobs:
           TF_OUTPUT: gha,pr
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: tfplan-summary
+        run: tf-summarize
 
   apply:
     runs-on: ubuntu-latest
@@ -74,7 +74,7 @@ jobs:
           TF_OUTPUT: gha,pr
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: tfplan-summary
+        run: tf-summarize
 ```
 
 ## Output
@@ -149,8 +149,110 @@ Infrastructure is up-to-date. No changes needed.
 
 ## Build
 
+### Default build (development version)
+
 ```bash
-go build -o tfplan-summary ./cmd/tfplan-summary
+go build -o tf-summarize .
+```
+
+Or using the Makefile:
+
+```bash
+make build
+```
+
+### Build with version injection
+
+To embed a version at build time, use the `-ldflags` flag:
+
+```bash
+go build -ldflags "-X main.Version=1.0.0" -o tf-summarize .
+```
+
+Or using the Makefile with a VERSION variable:
+
+```bash
+make build-versioned VERSION=1.0.0
+```
+
+### Display version
+
+```bash
+./tf-summarize --version
+```
+
+### Display help
+
+```bash
+./tf-summarize --help
+```
+
+### Release automation
+
+For automated releases with version injection, you can use GitHub Actions with ldflags:
+
+```yaml
+- name: Build Release
+  run: |
+    VERSION=${{ github.ref_name }} make build-versioned
+    # Creates binary with version from git tag (e.g., v1.0.0)
+```
+
+This allows you to:
+- Tag releases in git: `git tag v1.0.0`
+- Automatically inject version during CI/CD builds
+- Display version info with `--version` flag
+
+## Releases
+
+Releases are automated via GitHub Actions using semantic versioning and [conventional commits](https://www.conventionalcommits.org/).
+
+### How Releases Work
+
+When you push commits to `main`, the workflow automatically:
+1. Analyzes commit messages
+2. Determines version bump (major, minor, or patch)
+3. Builds Linux x86_64 binary with version injected
+4. Creates git tag and GitHub release
+5. Generates changelog from commits
+
+### Version Bumping
+
+| Commit Type | Version | Example |
+|-------------|---------|---------|
+| `feat:` | Minor | `feat: add new output format` |
+| `fix:` | Patch | `fix: handle edge case` |
+| `perf:` | Patch | `perf: optimize parser` |
+| `refactor:` | Patch | `refactor: simplify logic` |
+| `feat!:` or `BREAKING CHANGE` | Major | `feat!: restructure API` |
+| `docs:`, `style:`, `test:`, `chore:` | No release | Internal changes |
+
+### Making a Release
+
+Just push commits with conventional format:
+
+```bash
+# Patch release (1.0.0 → 1.0.1)
+git commit -m "fix: handle edge case in parser"
+git push origin main
+
+# Minor release (1.0.0 → 1.1.0)
+git commit -m "feat: add new output format"
+git push origin main
+
+# Major release (1.0.0 → 2.0.0)
+git commit -m "feat!: restructure API"
+git push origin main
+```
+
+### Install Releases
+
+Binaries are available for Linux x86_64 at: https://github.com/jomakori/TF_summarize/releases
+
+```bash
+# Install and run
+go install github.com/jomakori/TF_summarize@latest
+tf-summarize --version
 ```
 
 ## Test

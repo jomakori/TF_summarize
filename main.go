@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +9,10 @@ import (
 
 	"github.com/jomakori/TF_summarize/internal"
 )
+
+// Version is set at build time using ldflags
+// Example: go build -ldflags "-X main.Version=1.0.0"
+var Version = "dev"
 
 func main() {
 	if err := run(); err != nil {
@@ -17,6 +22,22 @@ func main() {
 }
 
 func run() error {
+	// --- Parse command-line flags ---
+	versionFlag := flag.Bool("version", false, "display version and exit")
+	helpFlag := flag.Bool("help", false, "display help and exit")
+	hFlag := flag.Bool("h", false, "display help and exit (shorthand)")
+	flag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("tf-summarize version %s\n", Version)
+		return nil
+	}
+
+	if *helpFlag || *hFlag {
+		printHelp()
+		return nil
+	}
+
 	// --- Read configuration from env vars ---
 
 	workspace := os.Getenv("TF_WORKSPACE")
@@ -106,4 +127,42 @@ func run() error {
 	}
 
 	return nil
+}
+
+func printHelp() {
+	fmt.Printf(`tf-summarize v%s
+
+A CLI tool that parses Terraform plan and apply output and produces
+beautified Markdown summaries suitable for GitHub Actions or PR comments.
+
+USAGE:
+  tf-summarize [flags]
+
+FLAGS:
+  -version    Display version and exit
+  -help, -h   Display this help message and exit
+
+ENVIRONMENT VARIABLES:
+  TF_PLAN_FILE        Path to file containing terraform plan/apply output (default: stdin)
+  TF_WORKSPACE        Workspace name shown in header (default: "default")
+  TF_PHASE            "plan" or "apply" - controls header messaging (default: "plan")
+  TF_OUTPUT           Output target(s): "stdout", "gha", "pr" (comma-separated, default: "stdout")
+  GITHUB_TOKEN        GitHub token for posting PR comments (required for "pr" output)
+  GITHUB_REPOSITORY   Repository in "owner/repo" format (set automatically in GitHub Actions)
+  PR_NUMBER           Pull request number to comment on (required for "pr" output)
+  GITHUB_API_URL      GitHub API base URL (default: "https://api.github.com")
+  TF_EXIT_ON_CHANGES  Exit with code 2 when changes detected (default: "false")
+
+EXAMPLES:
+  # Pipe terraform plan output
+  terraform plan -no-color | tf-summarize
+
+  # Use a saved plan file
+  TF_PLAN_FILE=plan.txt tf-summarize
+
+  # Apply phase with GitHub Actions output
+  terraform apply -no-color -auto-approve 2>&1 | TF_PHASE=apply TF_OUTPUT=gha tf-summarize
+
+For more information, visit: https://github.com/jomakori/TF_summarize
+`, Version)
 }

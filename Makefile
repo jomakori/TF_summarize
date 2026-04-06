@@ -1,10 +1,14 @@
-.PHONY: build test clean install smoke
+.PHONY: build test clean install smoke build-versioned
 
-BIN := tfplan-summary
-PKG := ./cmd/tfplan-summary
+BIN := tf-summarize
+PKG := .
+VERSION ?= dev
 
 build:
 	go build -o $(BIN) $(PKG)
+
+build-versioned:
+	go build -ldflags "-X main.Version=$(VERSION)" -o $(BIN) $(PKG)
 
 test:
 	go test -v ./...
