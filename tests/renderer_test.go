@@ -1,10 +1,10 @@
-package renderer
+package tests
 
 import (
 	"strings"
 	"testing"
 
-	"internal"
+	"github.com/jomakori/TF_summarize/internal"
 )
 
 func TestRenderPlanCreate(t *testing.T) {
@@ -20,7 +20,7 @@ func TestRenderPlanCreate(t *testing.T) {
 		},
 	}
 
-	out := Render(s)
+	out := internal.Render(s)
 
 	assertContains(t, out, "Changes found for")
 	assertContains(t, out, "plat-ue2-sandbox")
@@ -48,7 +48,7 @@ func TestRenderPlanDestroy(t *testing.T) {
 		},
 	}
 
-	out := Render(s)
+	out := internal.Render(s)
 
 	assertContains(t, out, "CAUTION")
 	assertContains(t, out, "REPLACE")
@@ -67,7 +67,7 @@ func TestRenderApplySuccess(t *testing.T) {
 		},
 	}
 
-	out := Render(s)
+	out := internal.Render(s)
 
 	assertContains(t, out, "✅")
 	assertContains(t, out, "applied successfully")
@@ -90,7 +90,7 @@ func TestRenderApplyMixed(t *testing.T) {
 		Errors: []string{"creating RDS DB Instance (mydb): DBInstanceAlreadyExists"},
 	}
 
-	out := Render(s)
+	out := internal.Render(s)
 
 	assertContains(t, out, "❌")
 	assertContains(t, out, "Apply failed")
@@ -111,7 +111,7 @@ func TestRenderApplyFail(t *testing.T) {
 		Errors: []string{"creating RDS DB Instance (mydb): DBInstanceAlreadyExists"},
 	}
 
-	out := Render(s)
+	out := internal.Render(s)
 
 	assertContains(t, out, "❌")
 	assertContains(t, out, "Apply failed")
@@ -134,7 +134,7 @@ func TestRenderApplyWithDestroys(t *testing.T) {
 		},
 	}
 
-	out := Render(s)
+	out := internal.Render(s)
 
 	assertContains(t, out, "✅")
 	assertContains(t, out, "applied successfully")
@@ -150,7 +150,7 @@ func TestRenderNoChanges(t *testing.T) {
 		Workspace: "dev",
 	}
 
-	out := Render(s)
+	out := internal.Render(s)
 	assertContains(t, out, "No changes found")
 }
 
