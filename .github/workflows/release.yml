@@ -1,6 +1,15 @@
 name: Release
 
 on:
+  # dry run
+  pull_request:
+    branches:
+      - main
+    types:
+      - open
+      - synchronize
+      - reopened
+  # actual release
   push:
     branches:
       - main
@@ -10,12 +19,8 @@ permissions:
   packages: write
 
 jobs:
-  # Determine if we need to create a release using semantic versioning
-  check-version:
+  dry-run:
     runs-on: ubuntu-latest
-    outputs:
-      should-release: ${{ steps.semantic.outputs.new_release_published }}
-      new-version: ${{ steps.semantic.outputs.new_release_version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,27 +38,32 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Build Linux binary
   build:
-    needs: check-version
-    if: needs.check-version.outputs.should-release == 'true'
+    needs: [dry-run]
     runs-on: ubuntu-latest
+    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
+      - name: Setup Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.22.2'
 
       - name: Run tests
-        run: go test -v ./...
+        run: go test -json ./... > tests.json
+
+      - name: Summarize tests
+        if: always()
+        uses: guyarb/golang-test-annotations@main
+        with:
+          test-results: tests.json
 
       - name: Build binary
         env:
           GOOS: linux
           GOARCH: amd64
-          VERSION: ${{ needs.check-version.outputs.new-version }}
+          VERSION: ${{ needs.dry-run.outputs.new_release_version }}
         run: |
           go build \
             -ldflags "-X main.Version=${VERSION}" \
@@ -67,9 +77,8 @@ jobs:
           path: tf-summarize
           retention-days: 1
 
-  # Create release with semantic-release
   release:
-    needs: [check-version, build]
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -90,9 +99,6 @@ jobs:
             [
               'main'
             ]
-          extra_plugins: |
-            @semantic-release/changelog
-            @semantic-release/git
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
