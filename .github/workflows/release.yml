@@ -52,7 +52,7 @@ jobs:
 
       - name: Summarize tests
         if: always()
-        uses: guyarb/golang-test-annotations@main
+        uses: guyarb/golang-test-annotations@master
         with:
           test-results: tests.json
 
