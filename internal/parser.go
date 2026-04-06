@@ -1,12 +1,10 @@
-package parser
+package internal
 
 import (
 	"bufio"
 	"regexp"
 	"strconv"
 	"strings"
-
-	"internal"
 )
 
 var (
@@ -49,8 +47,8 @@ var (
 )
 
 // Parse reads terraform plan or apply output and returns a Summary.
-func Parse(input string, phase internal.Phase, workspace string) (*internal.Summary, error) {
-	s := &internal.Summary{
+func Parse(input string, phase Phase, workspace string) (*Summary, error) {
+	s := &Summary{
 		Phase:     phase,
 		Workspace: workspace,
 	}
@@ -93,7 +91,7 @@ func Parse(input string, phase internal.Phase, workspace string) (*internal.Summ
 				addr := m[1]
 				// Only add if not already tracked as a failure
 				if !containsAddr(s.Failures, addr) {
-					s.Failures = append(s.Failures, internal.ResourceChange{
+					s.Failures = append(s.Failures, ResourceChange{
 						Address: addr,
 						Action:  inferActionFromError(lastError),
 						Success: false,
@@ -106,17 +104,17 @@ func Parse(input string, phase internal.Phase, workspace string) (*internal.Summ
 
 		// Parse "will be X" lines (plan output)
 		if m := willCreateRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Creates = append(s.Creates, internal.ResourceChange{Address: m[1], Action: internal.ActionCreate})
+			s.Creates = append(s.Creates, ResourceChange{Address: m[1], Action: ActionCreate})
 		} else if m := willDestroyRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Destroys = append(s.Destroys, internal.ResourceChange{Address: m[1], Action: internal.ActionDestroy})
+			s.Destroys = append(s.Destroys, ResourceChange{Address: m[1], Action: ActionDestroy})
 		} else if m := willReplaceRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Replaces = append(s.Replaces, internal.ResourceChange{Address: m[1], Action: internal.ActionReplace})
+			s.Replaces = append(s.Replaces, ResourceChange{Address: m[1], Action: ActionReplace})
 		} else if m := willUpdateRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Updates = append(s.Updates, internal.ResourceChange{Address: m[1], Action: internal.ActionUpdate})
+			s.Updates = append(s.Updates, ResourceChange{Address: m[1], Action: ActionUpdate})
 		} else if m := willReadRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Reads = append(s.Reads, internal.ResourceChange{Address: m[1], Action: internal.ActionRead})
+			s.Reads = append(s.Reads, ResourceChange{Address: m[1], Action: ActionRead})
 		} else if m := willImportRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Imports = append(s.Imports, internal.ResourceChange{Address: m[1], Action: internal.ActionImport})
+			s.Imports = append(s.Imports, ResourceChange{Address: m[1], Action: ActionImport})
 		}
 
 		// Parse compact resource lines (from plan -no-color output summary sections)
@@ -125,15 +123,15 @@ func Parse(input string, phase internal.Phase, workspace string) (*internal.Summ
 			switch m[1] {
 			case "+":
 				if !containsAddr(s.Creates, addr) {
-					s.Creates = append(s.Creates, internal.ResourceChange{Address: addr, Action: internal.ActionCreate})
+					s.Creates = append(s.Creates, ResourceChange{Address: addr, Action: ActionCreate})
 				}
 			case "-":
 				if !containsAddr(s.Destroys, addr) {
-					s.Destroys = append(s.Destroys, internal.ResourceChange{Address: addr, Action: internal.ActionDestroy})
+					s.Destroys = append(s.Destroys, ResourceChange{Address: addr, Action: ActionDestroy})
 				}
 			case "~":
 				if !containsAddr(s.Updates, addr) {
-					s.Updates = append(s.Updates, internal.ResourceChange{Address: addr, Action: internal.ActionUpdate})
+					s.Updates = append(s.Updates, ResourceChange{Address: addr, Action: ActionUpdate})
 				}
 			}
 		}
@@ -168,15 +166,15 @@ func Parse(input string, phase internal.Phase, workspace string) (*internal.Summ
 
 		// Parse apply resource completions
 		if m := applyCreatedRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Creates = append(s.Creates, internal.ResourceChange{Address: m[1], Action: internal.ActionCreate, Success: true})
+			s.Creates = append(s.Creates, ResourceChange{Address: m[1], Action: ActionCreate, Success: true})
 			completedResources[m[1]] = true
 		}
 		if m := applyDestroyedRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Destroys = append(s.Destroys, internal.ResourceChange{Address: m[1], Action: internal.ActionDestroy, Success: true})
+			s.Destroys = append(s.Destroys, ResourceChange{Address: m[1], Action: ActionDestroy, Success: true})
 			completedResources[m[1]] = true
 		}
 		if m := applyModifiedRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Updates = append(s.Updates, internal.ResourceChange{Address: m[1], Action: internal.ActionUpdate, Success: true})
+			s.Updates = append(s.Updates, ResourceChange{Address: m[1], Action: ActionUpdate, Success: true})
 			completedResources[m[1]] = true
 		}
 
@@ -189,7 +187,7 @@ func Parse(input string, phase internal.Phase, workspace string) (*internal.Summ
 	// If we had an error with no resource context line, associate it with the last started resource
 	if lastError != "" && len(s.Failures) == 0 && lastStartedResource != "" {
 		if !completedResources[lastStartedResource] {
-			s.Failures = append(s.Failures, internal.ResourceChange{
+			s.Failures = append(s.Failures, ResourceChange{
 				Address: lastStartedResource,
 				Action:  inferActionFromError(lastError),
 				Success: false,
@@ -199,7 +197,7 @@ func Parse(input string, phase internal.Phase, workspace string) (*internal.Summ
 	}
 
 	// If apply phase and we have errors but no success marker
-	if phase == internal.PhaseApply && len(s.Errors) > 0 && !s.ApplySucceeded {
+	if phase == PhaseApply && len(s.Errors) > 0 && !s.ApplySucceeded {
 		s.ApplySucceeded = false
 		s.Failed = len(s.Failures)
 		if s.Failed == 0 {
@@ -214,21 +212,21 @@ func Parse(input string, phase internal.Phase, workspace string) (*internal.Summ
 }
 
 // inferActionFromError guesses the action from the error message text.
-func inferActionFromError(errMsg string) internal.Action {
+func inferActionFromError(errMsg string) Action {
 	lower := strings.ToLower(errMsg)
 	switch {
 	case strings.Contains(lower, "creating"):
-		return internal.ActionCreate
+		return ActionCreate
 	case strings.Contains(lower, "destroying") || strings.Contains(lower, "deleting"):
-		return internal.ActionDestroy
+		return ActionDestroy
 	case strings.Contains(lower, "updating") || strings.Contains(lower, "modifying"):
-		return internal.ActionUpdate
+		return ActionUpdate
 	default:
-		return internal.ActionCreate
+		return ActionCreate
 	}
 }
 
-func containsAddr(changes []internal.ResourceChange, addr string) bool {
+func containsAddr(changes []ResourceChange, addr string) bool {
 	for _, c := range changes {
 		if c.Address == addr {
 			return true

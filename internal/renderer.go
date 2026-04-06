@@ -1,14 +1,12 @@
-package renderer
+package internal
 
 import (
 	"fmt"
 	"strings"
-
-	"internal"
 )
 
 // Render produces a markdown summary for the given Summary.
-func Render(s *internal.Summary) string {
+func Render(s *Summary) string {
 	var b strings.Builder
 
 	writeHeader(&b, s)
@@ -22,9 +20,9 @@ func Render(s *internal.Summary) string {
 	return b.String()
 }
 
-func writeHeader(b *strings.Builder, s *internal.Summary) {
+func writeHeader(b *strings.Builder, s *Summary) {
 	switch s.Phase {
-	case internal.PhaseApply:
+	case PhaseApply:
 		if s.ApplySucceeded && len(s.Errors) == 0 {
 			b.WriteString(fmt.Sprintf("## ✅ Changes applied successfully for `%s`\n\n", s.Workspace))
 		} else if len(s.Errors) > 0 {
@@ -41,11 +39,11 @@ func writeHeader(b *strings.Builder, s *internal.Summary) {
 	}
 }
 
-func writeBadges(b *strings.Builder, s *internal.Summary) {
+func writeBadges(b *strings.Builder, s *Summary) {
 	var badges []string
 
 	phaseBadge := "PLAN"
-	if s.Phase == internal.PhaseApply {
+	if s.Phase == PhaseApply {
 		phaseBadge = "APPLY"
 	}
 	badges = append(badges, fmt.Sprintf("![phase](https://img.shields.io/badge/%s-grey)", phaseBadge))
@@ -72,7 +70,7 @@ func writeBadges(b *strings.Builder, s *internal.Summary) {
 		badges = append(badges, "![drift](https://img.shields.io/badge/DRIFT%20DETECTED-e67e22)")
 	}
 
-	if s.Phase == internal.PhaseApply && len(s.Failures) > 0 {
+	if s.Phase == PhaseApply && len(s.Failures) > 0 {
 		badges = append(badges, fmt.Sprintf("![failures](https://img.shields.io/badge/%d%%20FAILED-e74c3c)", len(s.Failures)))
 	}
 
@@ -80,9 +78,9 @@ func writeBadges(b *strings.Builder, s *internal.Summary) {
 	b.WriteString("\n\n")
 }
 
-func writeWarnings(b *strings.Builder, s *internal.Summary) {
+func writeWarnings(b *strings.Builder, s *Summary) {
 	if s.ToDestroy > 0 || len(s.Replaces) > 0 {
-		if s.Phase == internal.PhasePlan {
+		if s.Phase == PhasePlan {
 			b.WriteString("> [!CAUTION]\n")
 			b.WriteString("> **Terraform will delete resources!**\n")
 			b.WriteString("> This plan contains resource delete operations. Please check the plan result very carefully.\n\n")
@@ -99,8 +97,8 @@ func writeWarnings(b *strings.Builder, s *internal.Summary) {
 	}
 }
 
-func writeErrors(b *strings.Builder, s *internal.Summary) {
-	if s.Phase == internal.PhaseApply && len(s.Failures) > 0 {
+func writeErrors(b *strings.Builder, s *Summary) {
+	if s.Phase == PhaseApply && len(s.Failures) > 0 {
 		// Detailed per-resource errors
 		return // rendered in resource sections instead
 	}
@@ -110,8 +108,8 @@ func writeErrors(b *strings.Builder, s *internal.Summary) {
 	}
 }
 
-func writeSummaryLine(b *strings.Builder, s *internal.Summary) {
-	if s.Phase == internal.PhaseApply {
+func writeSummaryLine(b *strings.Builder, s *Summary) {
+	if s.Phase == PhaseApply {
 		writeApplySummaryLine(b, s)
 		return
 	}
@@ -138,7 +136,7 @@ func writeSummaryLine(b *strings.Builder, s *internal.Summary) {
 	b.WriteString(fmt.Sprintf("**Plan:** %s\n\n", strings.Join(parts, ", ")))
 }
 
-func writeApplySummaryLine(b *strings.Builder, s *internal.Summary) {
+func writeApplySummaryLine(b *strings.Builder, s *Summary) {
 	parts := []string{}
 	if s.ToAdd > 0 {
 		parts = append(parts, fmt.Sprintf("**%d** added", s.ToAdd))
@@ -163,8 +161,8 @@ func writeApplySummaryLine(b *strings.Builder, s *internal.Summary) {
 	}
 }
 
-func writeResourceSections(b *strings.Builder, s *internal.Summary) {
-	if s.Phase == internal.PhaseApply {
+func writeResourceSections(b *strings.Builder, s *Summary) {
+	if s.Phase == PhaseApply {
 		writeApplyResourceSections(b, s)
 		return
 	}
@@ -177,7 +175,7 @@ func writeResourceSections(b *strings.Builder, s *internal.Summary) {
 	writeResourceGroup(b, "Read", "<=", s.Reads)
 }
 
-func writeApplyResourceSections(b *strings.Builder, s *internal.Summary) {
+func writeApplyResourceSections(b *strings.Builder, s *Summary) {
 	// Succeeded resources
 	writeApplyResourceGroup(b, "Created", "+", "✅", s.Creates)
 	writeApplyResourceGroup(b, "Updated", "~", "✅", s.Updates)
@@ -201,7 +199,7 @@ func writeApplyResourceSections(b *strings.Builder, s *internal.Summary) {
 	}
 }
 
-func writeResourceGroup(b *strings.Builder, title, prefix string, resources []internal.ResourceChange) {
+func writeResourceGroup(b *strings.Builder, title, prefix string, resources []ResourceChange) {
 	if len(resources) == 0 {
 		return
 	}
@@ -219,7 +217,7 @@ func writeResourceGroup(b *strings.Builder, title, prefix string, resources []in
 	b.WriteString("```\n\n</details>\n\n")
 }
 
-func writeApplyResourceGroup(b *strings.Builder, title, prefix, icon string, resources []internal.ResourceChange) {
+func writeApplyResourceGroup(b *strings.Builder, title, prefix, icon string, resources []ResourceChange) {
 	if len(resources) == 0 {
 		return
 	}
@@ -233,14 +231,14 @@ func writeApplyResourceGroup(b *strings.Builder, title, prefix, icon string, res
 	b.WriteString("```\n\n</details>\n\n")
 }
 
-func writeRawOutput(b *strings.Builder, s *internal.Summary) {
+func writeRawOutput(b *strings.Builder, s *Summary) {
 	raw := strings.TrimSpace(s.RawOutput)
 	if raw == "" {
 		return
 	}
 
 	title := "Terraform Plan Output"
-	if s.Phase == internal.PhaseApply {
+	if s.Phase == PhaseApply {
 		title = "Terraform Apply Output"
 	}
 

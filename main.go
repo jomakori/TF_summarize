@@ -6,10 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"internal"
-	"internal/output"
-	"internal/parser"
-	"internal/renderer"
+	"github.com/jomakori/TF_summarize/internal"
 )
 
 func main() {
@@ -73,29 +70,29 @@ func run() error {
 	}
 
 	// --- Parse & render ---
-	summary, err := parser.Parse(input, phase, workspace)
+	summary, err := internal.Parse(input, phase, workspace)
 	if err != nil {
 		return fmt.Errorf("parsing terraform output: %w", err)
 	}
 
-	markdown := renderer.Render(summary)
+	markdown := internal.Render(summary)
 
 	// --- Output ---
 	targets := strings.Split(targetStr, ",")
 	for _, t := range targets {
 		switch strings.TrimSpace(t) {
 		case "gha":
-			if err := output.WriteGHASummary(markdown); err != nil {
+			if err := internal.WriteGHASummary(markdown); err != nil {
 				return fmt.Errorf("writing GHA summary: %w", err)
 			}
 			fmt.Fprintln(os.Stderr, "✓ Written to GitHub Actions step summary")
 		case "pr":
-			if err := output.WritePRComment(markdown); err != nil {
+			if err := internal.WritePRComment(markdown); err != nil {
 				return fmt.Errorf("writing PR comment: %w", err)
 			}
 			fmt.Fprintln(os.Stderr, "✓ Posted/updated PR comment")
 		case "stdout":
-			output.WriteStdout(markdown)
+			internal.WriteStdout(markdown)
 		default:
 			return fmt.Errorf("unknown output target: %q (use gha, pr, or stdout)", t)
 		}
