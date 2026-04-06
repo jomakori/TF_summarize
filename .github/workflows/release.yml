@@ -9,6 +9,7 @@ on:
       - open
       - synchronize
       - reopened
+      - edited
   # actual release
   push:
     branches:
