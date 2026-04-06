@@ -1,6 +1,15 @@
 name: Release
 
 on:
+  # dry run
+  pull_request:
+    branches:
+      - main
+    types:
+      - open
+      - synchronize
+      - reopened
+  # actual release
   push:
     branches:
       - main
@@ -10,12 +19,9 @@ permissions:
   packages: write
 
 jobs:
-  # Determine if we need to create a release using semantic versioning
-  check-version:
+  dry-run:
     runs-on: ubuntu-latest
-    outputs:
-      should-release: ${{ steps.semantic.outputs.new_release_published }}
-      new-version: ${{ steps.semantic.outputs.new_release_version }}
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,21 +39,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Build Linux binary
   build:
-    needs: check-version
-    if: needs.check-version.outputs.should-release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
+      - name: Setup Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.22.2'
 
       - name: Run tests
-        run: go test -v ./...
+        run: go test -json ./... > tests.json
+
+      - name: Summarize tests
+        if: always()
+        uses: guyarb/golang-test-annotations@main
+        with:
+          test-results: tests.json
 
       - name: Build binary
         env:
@@ -91,6 +100,7 @@ jobs:
               'main'
             ]
           extra_plugins: |
+            conventional-changelog-conventionalcommits
             @semantic-release/changelog
             @semantic-release/git
         env:
