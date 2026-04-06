@@ -21,7 +21,6 @@ permissions:
 jobs:
   dry-run:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,6 +39,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
+    needs: [dry-run]
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     steps:
@@ -63,7 +63,7 @@ jobs:
         env:
           GOOS: linux
           GOARCH: amd64
-          VERSION: ${{ needs.check-version.outputs.new-version }}
+          VERSION: ${{ needs.dry-run.outputs.new_release_version }}
         run: |
           go build \
             -ldflags "-X main.Version=${VERSION}" \
@@ -99,10 +99,6 @@ jobs:
             [
               'main'
             ]
-          extra_plugins: |
-            conventional-changelog-conventionalcommits
-            @semantic-release/changelog
-            @semantic-release/git
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
