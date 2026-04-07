@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// Strip ANSI escape sequences and literal bracket codes
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m|\[[0-9;]*m`)
+
 var (
 	// Plan summary line: "Plan: 9 to add, 0 to change, 0 to destroy."
 	planSummaryRe = regexp.MustCompile(`Plan:\s+(\d+)\s+to add,\s+(\d+)\s+to change,\s+(\d+)\s+to destroy`)
@@ -57,7 +60,10 @@ func Parse(input string, phase Phase, workspace string, isDestroyPlan bool) (*Su
 	// Preserve the original input with ANSI codes for rendering
 	s.RawOutput = input
 
-	scanner := bufio.NewScanner(strings.NewReader(input))
+	// Strip ANSI codes before parsing
+	cleanInput := ansiRe.ReplaceAllString(input, "")
+
+	scanner := bufio.NewScanner(strings.NewReader(cleanInput))
 
 	// Track in-progress apply resources to associate errors
 	var lastStartedResource string
@@ -89,7 +95,7 @@ func Parse(input string, phase Phase, workspace string, isDestroyPlan bool) (*Su
 		// Try to extract the resource address from an error context line
 		if lastError != "" {
 			if m := errorResourceRe.FindStringSubmatch(line); len(m) > 1 {
-				addr := m[1]
+				addr := ansiRe.ReplaceAllString(m[1], "")
 				// Only add if not already tracked as a failure
 				if !containsAddr(s.Failures, addr) {
 					s.Failures = append(s.Failures, ResourceChange{
@@ -105,22 +111,28 @@ func Parse(input string, phase Phase, workspace string, isDestroyPlan bool) (*Su
 
 		// Parse "will be X" lines (plan output)
 		if m := willCreateRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Creates = append(s.Creates, ResourceChange{Address: m[1], Action: ActionCreate})
+			addr := ansiRe.ReplaceAllString(m[1], "")
+			s.Creates = append(s.Creates, ResourceChange{Address: addr, Action: ActionCreate})
 		} else if m := willDestroyRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Destroys = append(s.Destroys, ResourceChange{Address: m[1], Action: ActionDestroy})
+			addr := ansiRe.ReplaceAllString(m[1], "")
+			s.Destroys = append(s.Destroys, ResourceChange{Address: addr, Action: ActionDestroy})
 		} else if m := willReplaceRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Replaces = append(s.Replaces, ResourceChange{Address: m[1], Action: ActionReplace})
+			addr := ansiRe.ReplaceAllString(m[1], "")
+			s.Replaces = append(s.Replaces, ResourceChange{Address: addr, Action: ActionReplace})
 		} else if m := willUpdateRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Updates = append(s.Updates, ResourceChange{Address: m[1], Action: ActionUpdate})
+			addr := ansiRe.ReplaceAllString(m[1], "")
+			s.Updates = append(s.Updates, ResourceChange{Address: addr, Action: ActionUpdate})
 		} else if m := willReadRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Reads = append(s.Reads, ResourceChange{Address: m[1], Action: ActionRead})
+			addr := ansiRe.ReplaceAllString(m[1], "")
+			s.Reads = append(s.Reads, ResourceChange{Address: addr, Action: ActionRead})
 		} else if m := willImportRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Imports = append(s.Imports, ResourceChange{Address: m[1], Action: ActionImport})
+			addr := ansiRe.ReplaceAllString(m[1], "")
+			s.Imports = append(s.Imports, ResourceChange{Address: addr, Action: ActionImport})
 		}
 
 		// Parse compact resource lines (from plan -no-color output summary sections)
 		if m := compactResourceRe.FindStringSubmatch(line); len(m) > 2 {
-			addr := m[2]
+			addr := ansiRe.ReplaceAllString(m[2], "")
 			switch m[1] {
 			case "+":
 				if !containsAddr(s.Creates, addr) {
@@ -146,11 +158,11 @@ func Parse(input string, phase Phase, workspace string, isDestroyPlan bool) (*Su
 
 		// Track apply resource lifecycle: Creating.../Modifying.../Destroying...
 		if m := applyCreatingRe.FindStringSubmatch(line); len(m) > 1 {
-			lastStartedResource = m[1]
+			lastStartedResource = ansiRe.ReplaceAllString(m[1], "")
 		} else if m := applyModifyingRe.FindStringSubmatch(line); len(m) > 1 {
-			lastStartedResource = m[1]
+			lastStartedResource = ansiRe.ReplaceAllString(m[1], "")
 		} else if m := applyDestroyingRe.FindStringSubmatch(line); len(m) > 1 {
-			lastStartedResource = m[1]
+			lastStartedResource = ansiRe.ReplaceAllString(m[1], "")
 		}
 
 		// Parse apply result
@@ -167,16 +179,19 @@ func Parse(input string, phase Phase, workspace string, isDestroyPlan bool) (*Su
 
 		// Parse apply resource completions
 		if m := applyCreatedRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Creates = append(s.Creates, ResourceChange{Address: m[1], Action: ActionCreate, Success: true})
-			completedResources[m[1]] = true
+			addr := ansiRe.ReplaceAllString(m[1], "")
+			s.Creates = append(s.Creates, ResourceChange{Address: addr, Action: ActionCreate, Success: true})
+			completedResources[addr] = true
 		}
 		if m := applyDestroyedRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Destroys = append(s.Destroys, ResourceChange{Address: m[1], Action: ActionDestroy, Success: true})
-			completedResources[m[1]] = true
+			addr := ansiRe.ReplaceAllString(m[1], "")
+			s.Destroys = append(s.Destroys, ResourceChange{Address: addr, Action: ActionDestroy, Success: true})
+			completedResources[addr] = true
 		}
 		if m := applyModifiedRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Updates = append(s.Updates, ResourceChange{Address: m[1], Action: ActionUpdate, Success: true})
-			completedResources[m[1]] = true
+			addr := ansiRe.ReplaceAllString(m[1], "")
+			s.Updates = append(s.Updates, ResourceChange{Address: addr, Action: ActionUpdate, Success: true})
+			completedResources[addr] = true
 		}
 
 		// No changes detection - only mark as no changes if we haven't found any changes yet

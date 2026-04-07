@@ -125,6 +125,61 @@ last "terraform apply" which may have affected this plan:
 Plan: 0 to add, 1 to change, 0 to destroy.
 `
 
+const planCreateWithANSIOutput = `
+[0m[1mdata.oci_core_images.oracle_linux_arm: Reading...[0m[0m
+[0m[1mdata.oci_core_images.oracle_linux_arm: Read complete after 0s [id=CoreImagesDataSource-1239447172][0m
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  [32m+[0m create
+ [36m<=[0m read (data resources)
+
+Terraform will perform the following actions:
+
+[1m  # doppler_secret.tailscale_auth_key[0m will be created
+[0m  [32m+[0m[0m resource "doppler_secret" "tailscale_auth_key" {
+      [32m+[0m[0m computed   = (sensitive value)
+      [32m+[0m[0m config     = "production"
+      [32m+[0m[0m id         = (known after apply)
+      [32m+[0m[0m name       = "TF_VAR_TAILSCALE_AUTH_KEY"
+      [32m+[0m[0m project    = "maklab-base0"
+      [32m+[0m[0m value      = (sensitive value)
+      [32m+[0m[0m value_type = "string"
+      [32m+[0m[0m visibility = "masked"
+    }
+
+[1m  # oci_core_security_list.public_security_list[0m will be created
+[0m  [32m+[0m[0m resource "oci_core_security_list" "public_security_list" {
+      [32m+[0m[0m compartment_id = (sensitive value)
+      [32m+[0m[0m display_name   = "maklab-base0-public-security-list"
+    }
+
+[1m  # tailscale_tailnet_key.vm_auth_key[0m will be created
+[0m  [32m+[0m[0m resource "tailscale_tailnet_key" "vm_auth_key" {
+      [32m+[0m[0m created_at    = (known after apply)
+      [32m+[0m[0m ephemeral     = false
+    }
+
+[1m  # module.compute_instance.data.oci_core_private_ips.private_ips[0][0m will be read during apply
+  # (config refers to values not yet known)
+[0m [36m<=[0m[0m data "oci_core_private_ips" "private_ips" {
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m private_ips = (known after apply)
+      [32m+[0m[0m vnic_id     = (known after apply)
+    }
+
+[1m  # module.compute_instance.data.oci_core_shapes.current_ad[0m will be read during apply
+  # (config refers to values not yet known)
+[0m [36m<=[0m[0m data "oci_core_shapes" "current_ad" {
+      [32m+[0m[0m availability_domain = (known after apply)
+      [32m+[0m[0m compartment_id      = (sensitive value)
+      [32m+[0m[0m id                  = (known after apply)
+      [32m+[0m[0m shapes              = (known after apply)
+    }
+
+[1mPlan:[0m [0m15 to add, 0 to change, 0 to destroy.
+`
+
 func TestParsePlanCreate(t *testing.T) {
 	s, err := internal.Parse(planCreateOutput, internal.PhasePlan, "plat-ue2-sandbox", false)
 	if err != nil {
@@ -285,5 +340,38 @@ func TestParseDrift(t *testing.T) {
 
 	if !s.DriftDetected {
 		t.Error("expected drift to be detected")
+	}
+}
+
+func TestParsePlanCreateWithANSI(t *testing.T) {
+	s, err := internal.Parse(planCreateWithANSIOutput, internal.PhasePlan, "oci_maklab_base0", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The plan summary line says 15 to add, but test data only has 3 resources defined
+	// This test verifies that ANSI codes are properly stripped and parsing works
+	if s.ToAdd != 15 {
+		t.Errorf("expected 15 to add (from plan summary), got %d", s.ToAdd)
+	}
+	if s.ToChange != 0 {
+		t.Errorf("expected 0 to change, got %d", s.ToChange)
+	}
+	if s.ToDestroy != 0 {
+		t.Errorf("expected 0 to destroy, got %d", s.ToDestroy)
+	}
+	// Test data only has 3 creates defined, not 15
+	if len(s.Creates) != 3 {
+		t.Errorf("expected 3 create resources in test data, got %d", len(s.Creates))
+	}
+	if len(s.Reads) != 2 {
+		t.Errorf("expected 2 read resources, got %d", len(s.Reads))
+	}
+	// Verify ANSI codes are stripped from addresses
+	if s.Creates[0].Address != "doppler_secret.tailscale_auth_key" {
+		t.Errorf("unexpected first create address: %s (ANSI codes not stripped?)", s.Creates[0].Address)
+	}
+	if s.Reads[0].Address != "module.compute_instance.data.oci_core_private_ips.private_ips[0]" {
+		t.Errorf("unexpected first read address: %s (ANSI codes not stripped?)", s.Reads[0].Address)
 	}
 }
