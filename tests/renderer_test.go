@@ -24,7 +24,7 @@ func TestRenderPlanCreate(t *testing.T) {
 
 	assertContains(t, out, "Changes found for")
 	assertContains(t, out, "plat-ue2-sandbox")
-	assertContains(t, out, "CREATE")
+	assertContains(t, out, "-Create")
 	assertContains(t, out, "**3** to add")
 	assertContains(t, out, "module.s3_bucket.aws_s3_bucket.default[0]")
 	assertContains(t, out, "Terraform Plan Output")
@@ -51,7 +51,7 @@ func TestRenderPlanDestroy(t *testing.T) {
 	out := internal.Render(s)
 
 	assertContains(t, out, "CAUTION")
-	assertContains(t, out, "REPLACE")
+	assertContains(t, out, "-Replace")
 }
 
 func TestRenderApplySuccess(t *testing.T) {
@@ -98,7 +98,7 @@ func TestRenderApplyMixed(t *testing.T) {
 	assertContains(t, out, "❌ Failed")
 	assertContains(t, out, "module.rds.aws_db_instance.main")
 	assertContains(t, out, "DBInstanceAlreadyExists")
-	assertContains(t, out, "FAILED")
+	assertContains(t, out, "-Failed")
 }
 
 func TestRenderApplyFail(t *testing.T) {

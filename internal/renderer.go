@@ -2,8 +2,28 @@ package internal
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 )
+
+// Color constants for shields.io badges
+const (
+	colorGreen       = "28a745" // New changes (Create) & successful Apply
+	colorRed         = "dc3545" // Deleted changes (Remove/Replace), Destroy Plan, Failed Apply
+	colorYellow      = "FFC107" // Modifications (Modify) - vibrant yellow
+	colorNoChanges   = "0366d6" // No changes (blue)
+	colorImport      = "6f42c1" // Import (purple)
+	colorOrange      = "fd7e14" // Warnings/Drift
+	colorPlan        = "007bff" // Phase badge (Plan) - blue
+)
+
+// createShieldsIOBadge creates a shields.io badge URL
+func createShieldsIOBadge(label, message, color string) string {
+	// URL encode the label and message
+	encodedLabel := url.QueryEscape(label)
+	encodedMessage := url.QueryEscape(message)
+	return fmt.Sprintf("![%s](https://img.shields.io/badge/%s-%s-%s)", label, encodedLabel, encodedMessage, color)
+}
 
 // Render produces a markdown summary for the given Summary.
 func Render(s *Summary) string {
@@ -42,36 +62,68 @@ func writeHeader(b *strings.Builder, s *Summary) {
 func writeBadges(b *strings.Builder, s *Summary) {
 	var badges []string
 
-	phaseBadge := "PLAN"
+	// Phase badge with color dependent on plan type and success
+	phaseBadge := "Plan"
+	phaseColor := colorPlan
+	
 	if s.Phase == PhaseApply {
-		phaseBadge = "APPLY"
+		phaseBadge = "Apply"
+		// Apply phase: green for success, red for failures
+		if len(s.Failures) > 0 || (s.ApplyError != "" && !s.ApplySucceeded) {
+			phaseColor = colorRed // red for failed apply
+		} else {
+			phaseColor = colorGreen // green for successful apply
+		}
+	} else {
+		// Plan phase: blue for regular plan, red for destroy plan
+		if s.IsDestroyPlan {
+			phaseBadge = "Destroy"
+			phaseColor = colorRed // red for destroy plan
+		}
 	}
-	badges = append(badges, fmt.Sprintf("![phase](https://img.shields.io/badge/%s-grey)", phaseBadge))
+	
+	badges = append(badges, createShieldsIOBadge("Terraform", phaseBadge, phaseColor))
 
-	// Action badge — pick the most significant action
-	switch {
-	case len(s.Replaces) > 0 || (s.ToDestroy > 0 && s.ToAdd > 0):
-		badges = append(badges, "![action](https://img.shields.io/badge/REPLACE-e74c3c)")
-	case s.ToDestroy > 0:
-		badges = append(badges, "![action](https://img.shields.io/badge/DESTROY-e74c3c)")
-	case s.ToChange > 0 && s.ToAdd > 0:
-		badges = append(badges, "![action](https://img.shields.io/badge/UPDATE%20%2B%20CREATE-2ecc71)")
-	case s.ToChange > 0:
-		badges = append(badges, "![action](https://img.shields.io/badge/UPDATE-f39c12)")
-	case s.ToAdd > 0:
-		badges = append(badges, "![action](https://img.shields.io/badge/CREATE-2ecc71)")
-	case s.ToImport > 0:
-		badges = append(badges, "![action](https://img.shields.io/badge/IMPORT-3498db)")
-	default:
-		badges = append(badges, "![action](https://img.shields.io/badge/NO%20CHANGES-grey)")
+	// Individual action badges with counts (PascalCase with requested terminology)
+	if s.ToAdd > 0 {
+		msg := fmt.Sprintf("Create (%d)", s.ToAdd)
+		badges = append(badges, createShieldsIOBadge("", msg, colorGreen))
 	}
 
+	if s.ToChange > 0 {
+		msg := fmt.Sprintf("Modify (%d)", s.ToChange)
+		badges = append(badges, createShieldsIOBadge("", msg, colorYellow))
+	}
+
+	if s.ToDestroy > 0 {
+		msg := fmt.Sprintf("Remove (%d)", s.ToDestroy)
+		badges = append(badges, createShieldsIOBadge("", msg, colorRed))
+	}
+
+	if len(s.Replaces) > 0 {
+		msg := fmt.Sprintf("Replace (%d)", len(s.Replaces))
+		badges = append(badges, createShieldsIOBadge("", msg, colorRed))
+	}
+
+	if s.ToImport > 0 {
+		msg := fmt.Sprintf("Import (%d)", s.ToImport)
+		badges = append(badges, createShieldsIOBadge("", msg, colorImport))
+	}
+
+	// Show NO CHANGES badge only if there are truly no changes (blue color)
+	if s.ToAdd == 0 && s.ToChange == 0 && s.ToDestroy == 0 && s.ToImport == 0 && len(s.Replaces) == 0 {
+		badges = append(badges, createShieldsIOBadge("", "No Changes", colorNoChanges))
+	}
+
+	// Drift detected badge
 	if s.DriftDetected {
-		badges = append(badges, "![drift](https://img.shields.io/badge/DRIFT%20DETECTED-e67e22)")
+		badges = append(badges, createShieldsIOBadge("", "Drift Detected", colorOrange))
 	}
 
+	// Failures badge for apply phase
 	if s.Phase == PhaseApply && len(s.Failures) > 0 {
-		badges = append(badges, fmt.Sprintf("![failures](https://img.shields.io/badge/%d%%20FAILED-e74c3c)", len(s.Failures)))
+		failureMsg := fmt.Sprintf("Failed (%d)", len(s.Failures))
+		badges = append(badges, createShieldsIOBadge("", failureMsg, colorRed))
 	}
 
 	b.WriteString(strings.Join(badges, " "))

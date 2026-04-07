@@ -61,6 +61,12 @@ func run() error {
 		phase = internal.PhasePlan
 	}
 
+	// Check if this is a destroy plan
+	isDestroyPlan := false
+	if destroyEnv := os.Getenv("DESTROY"); destroyEnv != "" {
+		isDestroyPlan = strings.ToLower(destroyEnv) == "true" || destroyEnv == "1"
+	}
+
 	// Output target: "gha", "pr", "stdout" (default), or comma-separated combo
 	targetStr := strings.ToLower(os.Getenv("TF_OUTPUT"))
 	if targetStr == "" {
@@ -91,7 +97,7 @@ func run() error {
 	}
 
 	// --- Parse & render ---
-	summary, err := internal.Parse(input, phase, workspace)
+	summary, err := internal.Parse(input, phase, workspace, isDestroyPlan)
 	if err != nil {
 		return fmt.Errorf("parsing terraform output: %w", err)
 	}

@@ -47,13 +47,14 @@ var (
 )
 
 // Parse reads terraform plan or apply output and returns a Summary.
-func Parse(input string, phase Phase, workspace string) (*Summary, error) {
+func Parse(input string, phase Phase, workspace string, isDestroyPlan bool) (*Summary, error) {
 	s := &Summary{
-		Phase:     phase,
-		Workspace: workspace,
+		Phase:          phase,
+		Workspace:      workspace,
+		IsDestroyPlan:  isDestroyPlan,
 	}
 
-	// Store the full raw output for the detail dropdown
+	// Preserve the original input with ANSI codes for rendering
 	s.RawOutput = input
 
 	scanner := bufio.NewScanner(strings.NewReader(input))
@@ -178,9 +179,13 @@ func Parse(input string, phase Phase, workspace string) (*Summary, error) {
 			completedResources[m[1]] = true
 		}
 
-		// No changes detection
-		if noChangesRe.MatchString(line) && s.ToAdd == 0 && s.ToChange == 0 && s.ToDestroy == 0 {
-			// leave all zeros — renderer handles it
+		// No changes detection - only mark as no changes if we haven't found any changes yet
+		// This prevents false positives when "No changes" appears but changes were already detected
+		if noChangesRe.MatchString(line) {
+			// Only reset if we truly have no changes detected
+			if s.ToAdd == 0 && s.ToChange == 0 && s.ToDestroy == 0 && len(s.Creates) == 0 && len(s.Updates) == 0 && len(s.Destroys) == 0 {
+				// leave all zeros — renderer handles it
+			}
 		}
 	}
 

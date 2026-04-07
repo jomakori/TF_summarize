@@ -1,4 +1,4 @@
-package tests
+ package tests
 
 import (
 	"testing"
@@ -126,7 +126,7 @@ Plan: 0 to add, 1 to change, 0 to destroy.
 `
 
 func TestParsePlanCreate(t *testing.T) {
-	s, err := internal.Parse(planCreateOutput, internal.PhasePlan, "plat-ue2-sandbox")
+	s, err := internal.Parse(planCreateOutput, internal.PhasePlan, "plat-ue2-sandbox", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestParsePlanCreate(t *testing.T) {
 }
 
 func TestParsePlanReplace(t *testing.T) {
-	s, err := internal.Parse(planReplaceOutput, internal.PhasePlan, "plat-ue2-sandbox")
+	s, err := internal.Parse(planReplaceOutput, internal.PhasePlan, "plat-ue2-sandbox", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestParsePlanReplace(t *testing.T) {
 }
 
 func TestParseApplySuccess(t *testing.T) {
-	s, err := internal.Parse(applySuccessOutput, internal.PhaseApply, "prod")
+	s, err := internal.Parse(applySuccessOutput, internal.PhaseApply, "prod", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestParseApplySuccess(t *testing.T) {
 }
 
 func TestParseApplyMixed(t *testing.T) {
-	s, err := internal.Parse(applyMixedOutput, internal.PhaseApply, "prod")
+	s, err := internal.Parse(applyMixedOutput, internal.PhaseApply, "prod", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestParseApplyMixed(t *testing.T) {
 }
 
 func TestParseApplyFail(t *testing.T) {
-	s, err := internal.Parse(applyFailOutput, internal.PhaseApply, "prod")
+	s, err := internal.Parse(applyFailOutput, internal.PhaseApply, "prod", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestParseApplyFail(t *testing.T) {
 }
 
 func TestParseApplyDestroy(t *testing.T) {
-	s, err := internal.Parse(applyDestroyOutput, internal.PhaseApply, "staging")
+	s, err := internal.Parse(applyDestroyOutput, internal.PhaseApply, "staging", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestParseApplyDestroy(t *testing.T) {
 }
 
 func TestParseNoChanges(t *testing.T) {
-	s, err := internal.Parse(noChangesOutput, internal.PhasePlan, "dev")
+	s, err := internal.Parse(noChangesOutput, internal.PhasePlan, "dev", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +278,7 @@ func TestParseNoChanges(t *testing.T) {
 }
 
 func TestParseDrift(t *testing.T) {
-	s, err := internal.Parse(driftOutput, internal.PhasePlan, "staging")
+	s, err := internal.Parse(driftOutput, internal.PhasePlan, "staging", false)
 	if err != nil {
 		t.Fatal(err)
 	}
