@@ -34,6 +34,9 @@ type Summary struct {
 	Phase     Phase
 	Workspace string
 
+	// Whether this is a destroy plan (terraform plan -destroy)
+	IsDestroyPlan bool
+
 	// Counts
 	ToAdd     int
 	ToChange  int

@@ -1,2 +1,4 @@
 tests.json
-tf-summarize
+tf_summarize
+*.txt
+*.log

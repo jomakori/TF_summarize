@@ -26,6 +26,7 @@ terraform apply -no-color -auto-approve 2>&1 | TF_PHASE=apply tf-summarize
 | `TF_WORKSPACE`        | No       | `default` | Workspace name shown in the header (falls back to `WORKSPACE`) |
 | `TF_PHASE`            | No       | `plan`    | `plan` or `apply` — controls header messaging and parsing    |
 | `TF_OUTPUT`           | No       | `stdout`  | Output target(s): `stdout`, `gha`, `pr` (comma-separated)   |
+| `DESTROY`             | No       | `false`   | Set to `true` or `1` for destroy plans (changes phase badge to red) |
 | `GITHUB_TOKEN`        | For PR   | —         | GitHub token for posting PR comments                         |
 | `GITHUB_REPOSITORY`   | For PR   | —         | `owner/repo` — set automatically in GHA                      |
 | `PR_NUMBER`           | For PR   | —         | Pull request number to comment on                            |
@@ -79,12 +80,27 @@ jobs:
 
 ## Output
 
+Badges use [shields.io](https://shields.io) styling with color-coded change types:
+- **Create** (green #28a745) — new resources
+- **Modify** (yellow #FFC107) — resource modifications
+- **Remove** (red #dc3545) — resource deletions
+- **Replace** (red #dc3545) — resource replacements
+- **Import** (purple #6f42c1) — imported resources
+- **No Changes** (blue #0366d6) — no detected changes
+- **Drift Detected** (orange #fd7e14) — drift warnings
+
+Phase badges adapt based on plan type and success:
+- **Plan** (blue #007bff) — terraform plan
+- **Destroy** (red #dc3545) — destroy plan (when `DESTROY=true`)
+- **Apply** (green #28a745) — successful apply
+- **Apply** (red #dc3545) — failed apply
+
 ### Plan — Create
 
 ```
 ## 📋 Changes found for `plat-ue2-sandbox`
 
-![PLAN](badge) ![CREATE](badge)
+![Terraform](https://img.shields.io/badge/Terraform-Plan-007bff) ![](https://img.shields.io/badge/-Create%20(9)-28a745)
 
 **Plan:** **9** to add
 
@@ -97,7 +113,7 @@ jobs:
 ```
 ## 📋 Changes found for `plat-ue2-sandbox`
 
-![PLAN](badge) ![REPLACE](badge)
+![Terraform](https://img.shields.io/badge/Terraform-Plan-007bff) ![](https://img.shields.io/badge/-Create%20(1)-28a745) ![](https://img.shields.io/badge/-Modify%20(1)-FFC107) ![](https://img.shields.io/badge/-Remove%20(2)-dc3545) ![](https://img.shields.io/badge/-Replace%20(1)-dc3545)
 
 > [!CAUTION]
 > **Terraform will delete resources!**
@@ -110,12 +126,28 @@ jobs:
 ▸ Terraform Plan Output
 ```
 
+### Plan — Destroy
+
+```
+## 📋 Changes found for `prod`
+
+![Terraform](https://img.shields.io/badge/Terraform-Destroy-dc3545) ![](https://img.shields.io/badge/-Remove%20(5)-dc3545)
+
+> [!CAUTION]
+> **Terraform will delete resources!**
+
+**Plan:** **5** to destroy
+
+▸ Destroy (5)
+▸ Terraform Plan Output
+```
+
 ### Apply — Success
 
 ```
 ## ✅ Changes applied successfully for `prod`
 
-![APPLY](badge) ![CREATE](badge)
+![Terraform](https://img.shields.io/badge/Terraform-Apply-28a745) ![](https://img.shields.io/badge/-Create%20(3)-28a745)
 
 **Result:** **3** added
 
@@ -128,9 +160,9 @@ jobs:
 ```
 ## ❌ Apply failed for `prod`
 
-![APPLY](badge) ![1 FAILED](badge)
+![Terraform](https://img.shields.io/badge/Terraform-Apply-dc3545) ![](https://img.shields.io/badge/-Create%20(2)-28a745) ![](https://img.shields.io/badge/-Failed%20(1)-dc3545)
 
-**Result:** **1** failed
+**Result:** **2** added, **1** failed
 
 ▸ ✅ Created (2)       — resources that succeeded
 ▸ ❌ Failed (1)        — open by default, shows resource + error
@@ -142,7 +174,7 @@ jobs:
 ```
 ## ✅ No changes found for `dev`
 
-![PLAN](badge) ![NO CHANGES](badge)
+![Terraform](https://img.shields.io/badge/Terraform-Plan-007bff) ![](https://img.shields.io/badge/-No%20Changes-0366d6)
 
 Infrastructure is up-to-date. No changes needed.
 ```
