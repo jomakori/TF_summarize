@@ -1,6 +1,7 @@
  package tests
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jomakori/TF_summarize/internal"
@@ -340,6 +341,70 @@ func TestParseDrift(t *testing.T) {
 
 	if !s.DriftDetected {
 		t.Error("expected drift to be detected")
+	}
+}
+
+func TestParseSymbolsFormat(t *testing.T) {
+	// Test that symbol-prefixed lines are correctly parsed as resources
+	// and that attribute values (like CIDR blocks, IPs, etc.) are not mistaken for resources
+	input := `
+  # module.vcn.oci_core_vcn.vcn will be created
+  + resource "oci_core_vcn" "vcn" ***
+      + cidr_blocks                      = [
+          + "10.0.0.0/16",
+        ]
+      + compartment_id                   = (sensitive value)
+      + display_name                     = "maklab-base0-vcn"
+    ***
+
+  # module.compute.aws_instance.web will be destroyed
+  - resource "aws_instance" "web" {
+      - private_ip = "192.168.1.10"
+    }
+
+  # module.storage.aws_s3_bucket.data will be updated
+  ~ resource "aws_s3_bucket" "data" {
+      ~ versioning {
+          ~ enabled = true
+        }
+    }
+
+Plan: 1 to add, 1 to change, 1 to destroy.
+`
+
+	s, err := internal.Parse(input, internal.PhasePlan, "test", false)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// Verify correct counts
+	if len(s.Creates) != 1 {
+		t.Errorf("expected 1 create, got %d", len(s.Creates))
+	}
+	if len(s.Destroys) != 1 {
+		t.Errorf("expected 1 destroy, got %d", len(s.Destroys))
+	}
+	if len(s.Updates) != 1 {
+		t.Errorf("expected 1 update, got %d", len(s.Updates))
+	}
+
+	// Verify correct resources were parsed
+	if len(s.Creates) > 0 && s.Creates[0].Address != "module.vcn.oci_core_vcn.vcn" {
+		t.Errorf("expected create 'module.vcn.oci_core_vcn.vcn', got '%s'", s.Creates[0].Address)
+	}
+	if len(s.Destroys) > 0 && s.Destroys[0].Address != "module.compute.aws_instance.web" {
+		t.Errorf("expected destroy 'module.compute.aws_instance.web', got '%s'", s.Destroys[0].Address)
+	}
+	if len(s.Updates) > 0 && s.Updates[0].Address != "module.storage.aws_s3_bucket.data" {
+		t.Errorf("expected update 'module.storage.aws_s3_bucket.data', got '%s'", s.Updates[0].Address)
+	}
+
+	// Verify attribute values were not parsed as resources
+	allResources := append(append(s.Creates, s.Destroys...), s.Updates...)
+	for _, r := range allResources {
+		if strings.Contains(r.Address, "10.0.0.0") || strings.Contains(r.Address, "192.168.1.10") {
+			t.Errorf("attribute value was incorrectly parsed as resource: %s", r.Address)
+		}
 	}
 }
 

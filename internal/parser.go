@@ -42,8 +42,10 @@ var (
 	noChangesRe = regexp.MustCompile(`No changes\.\s+|Your infrastructure matches the configuration`)
 
 	// Compact resource lines: "+ module.foo.resource_type.name"
-	// Require a dot in the address to avoid matching action keywords like "+ create"
-	compactResourceRe = regexp.MustCompile(`^\s+([+\-~])\s+(\S+\.\S+)$`)
+	// Match resource addresses: resource_type.name or module.x.resource_type.name
+	// Must start with alphanumeric/underscore and contain at least one dot
+	// Exclude quoted strings (CIDR blocks, etc.) by not matching if it starts with a quote
+	compactResourceRe = regexp.MustCompile(`^\s+([+\-~])\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?(?:\.[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?)+)$`)
 )
 
 // Parse reads terraform plan or apply output and returns a Summary.
