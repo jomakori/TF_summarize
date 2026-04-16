@@ -19,10 +19,9 @@ const (
 
 // createShieldsIOBadge creates a shields.io badge URL
 func createShieldsIOBadge(label, message, color string) string {
-	// URL encode the label and message
-	encodedLabel := url.QueryEscape(label)
-	encodedMessage := url.QueryEscape(message)
-	return fmt.Sprintf("![%s](https://img.shields.io/badge/%s-%s-%s)", label, encodedLabel, encodedMessage, color)
+	// URL encode message for shields.io badge path (spaces become %20, not +)
+	encodedMessage := strings.ReplaceAll(url.QueryEscape(message), "+", "%20")
+	return fmt.Sprintf("![%s](https://img.shields.io/badge/%s-%s-%s)", label, label, encodedMessage, color)
 }
 
 // Render produces a markdown summary for the given Summary.

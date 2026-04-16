@@ -57,10 +57,10 @@ func Parse(input string, phase Phase, workspace string, isDestroyPlan bool) (*Su
 		IsDestroyPlan:  isDestroyPlan,
 	}
 
-	// Preserve the original input with ANSI codes for rendering
+	// Preserve original input with ANSI codes for terminal display
 	s.RawOutput = input
 
-	// Strip ANSI codes before parsing
+	// Strip ANSI codes from a copy for parsing
 	cleanInput := ansiRe.ReplaceAllString(input, "")
 
 	scanner := bufio.NewScanner(strings.NewReader(cleanInput))
