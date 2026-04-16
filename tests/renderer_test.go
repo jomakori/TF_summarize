@@ -146,6 +146,83 @@ func TestRenderNoChanges(t *testing.T) {
 	assertContains(t, out, "Infrastructure is up-to-date")
 }
 
+func TestRenderRawOutputFormatting(t *testing.T) {
+	// Test that raw output is properly formatted with color codes
+	rawOutput := `  # module.s3_bucket.aws_s3_bucket.default[0] will be created
+  + resource "aws_s3_bucket" "default" {
+      + bucket = "my-test-bucket"
+    }
+
+  # module.rds.aws_db_instance.main will be destroyed
+  - resource "aws_db_instance" "main" {
+      - engine = "postgres"
+    }
+
+  # module.vpc.aws_subnet.private[0] will be updated
+  ~ resource "aws_subnet" "private" {
+      ~ tags = {...}
+    }
+
+Plan: 1 to add, 1 to change, 1 to destroy.`
+
+	s := &internal.Summary{
+		Phase:     internal.PhasePlan,
+		Workspace: "test",
+		ToAdd:     1,
+		ToChange:  1,
+		ToDestroy: 1,
+		RawOutput: rawOutput,
+	}
+
+	out := internal.Render(s)
+
+	// Verify output contains the raw output section
+	assertContains(t, out, "Terraform Plan Output")
+	assertContains(t, out, "<details>")
+	assertContains(t, out, "```diff")
+	
+	// Verify color codes are applied (diff markers should be present)
+	assertContains(t, out, "+ resource")
+	assertContains(t, out, "- resource")
+	assertContains(t, out, "~ resource")
+	
+	// Verify plan summary is included
+	assertContains(t, out, "Plan: 1 to add, 1 to change, 1 to destroy")
+}
+
+func TestRenderApplyOutputFormatting(t *testing.T) {
+	// Test that apply output is properly formatted with color codes
+	rawOutput := `module.s3_bucket.aws_s3_bucket.default[0]: Creating...
+module.s3_bucket.aws_s3_bucket.default[0]: Creation complete after 2s [id=my-test-bucket]
+module.rds.aws_db_instance.main: Destroying... [id=mydb]
+module.rds.aws_db_instance.main: Destruction complete after 5s
+
+Apply complete! Resources: 1 added, 0 changed, 1 destroyed.`
+
+	s := &internal.Summary{
+		Phase:          internal.PhaseApply,
+		Workspace:      "prod",
+		ToAdd:          1,
+		ToDestroy:      1,
+		ApplySucceeded: true,
+		RawOutput:      rawOutput,
+	}
+
+	out := internal.Render(s)
+
+	// Verify output contains the apply output section
+	assertContains(t, out, "Terraform Apply Output")
+	assertContains(t, out, "<details>")
+	assertContains(t, out, "```diff")
+	
+	// Verify color codes are applied
+	assertContains(t, out, "+ module.s3_bucket")
+	assertContains(t, out, "- module.rds")
+	
+	// Verify apply complete message is included
+	assertContains(t, out, "Apply complete!")
+}
+
 func assertContains(t *testing.T, haystack, needle string) {
 	t.Helper()
 	if !strings.Contains(haystack, needle) {

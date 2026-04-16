@@ -352,7 +352,68 @@ func writeRawOutput(b *strings.Builder, s *Summary) {
 		title = "Terraform Apply Output"
 	}
 
-	b.WriteString(fmt.Sprintf("<details>\n<summary><b>%s</b></summary>\n\n```\n", title))
-	b.WriteString(raw)
+	b.WriteString(fmt.Sprintf("<details>\n<summary><b>%s</b></summary>\n\n```diff\n", title))
+	b.WriteString(colorizeOutput(raw, s.Phase))
 	b.WriteString("\n```\n\n</details>\n")
+}
+
+// colorizeOutput adds color codes to terraform output for better readability
+func colorizeOutput(output string, phase Phase) string {
+	lines := strings.Split(output, "\n")
+	var result []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		
+		// Color code based on terraform output patterns
+		switch {
+		// Plan phase: + for creates (green)
+		case strings.HasPrefix(trimmed, "+ "):
+			result = append(result, fmt.Sprintf("+ %s", strings.TrimPrefix(trimmed, "+ ")))
+		// Plan phase: - for destroys (red)
+		case strings.HasPrefix(trimmed, "- "):
+			result = append(result, fmt.Sprintf("- %s", strings.TrimPrefix(trimmed, "- ")))
+		// Plan phase: ~ for updates (yellow)
+		case strings.HasPrefix(trimmed, "~ "):
+			result = append(result, fmt.Sprintf("~ %s", strings.TrimPrefix(trimmed, "~ ")))
+		// Plan phase: -/+ for replaces (orange)
+		case strings.HasPrefix(trimmed, "-/+ "):
+			result = append(result, fmt.Sprintf("-/+ %s", strings.TrimPrefix(trimmed, "-/+ ")))
+		// Apply phase: Creating... (green)
+		case strings.Contains(trimmed, "Creating..."):
+			result = append(result, fmt.Sprintf("+ %s", trimmed))
+		// Apply phase: Destroying... (red)
+		case strings.Contains(trimmed, "Destroying..."):
+			result = append(result, fmt.Sprintf("- %s", trimmed))
+		// Apply phase: Modifying... (yellow)
+		case strings.Contains(trimmed, "Modifying..."):
+			result = append(result, fmt.Sprintf("~ %s", trimmed))
+		// Apply phase: Creation complete (green)
+		case strings.Contains(trimmed, "Creation complete"):
+			result = append(result, fmt.Sprintf("+ %s", trimmed))
+		// Apply phase: Destruction complete (red)
+		case strings.Contains(trimmed, "Destruction complete"):
+			result = append(result, fmt.Sprintf("- %s", trimmed))
+		// Apply phase: Modifications complete (yellow)
+		case strings.Contains(trimmed, "Modifications complete"):
+			result = append(result, fmt.Sprintf("~ %s", trimmed))
+		// Error lines (red)
+		case strings.HasPrefix(trimmed, "Error:"):
+			result = append(result, fmt.Sprintf("- %s", trimmed))
+		// Warning lines (yellow)
+		case strings.HasPrefix(trimmed, "Warning:"):
+			result = append(result, fmt.Sprintf("~ %s", trimmed))
+		// Plan summary line
+		case strings.HasPrefix(trimmed, "Plan:"):
+			result = append(result, trimmed)
+		// Apply complete line
+		case strings.HasPrefix(trimmed, "Apply complete!"):
+			result = append(result, trimmed)
+		// Default: keep as-is
+		default:
+			result = append(result, line)
+		}
+	}
+
+	return strings.Join(result, "\n")
 }
