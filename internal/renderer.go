@@ -218,12 +218,11 @@ func writeResourceSections(b *strings.Builder, s *Summary) {
 		return
 	}
 
-	writeResourceGroup(b, "Create", "+", s.Creates)
-	writeResourceGroup(b, "Update", "~", s.Updates)
-	writeResourceGroup(b, "Destroy", "-", s.Destroys)
-	writeResourceGroup(b, "Replace", "-/+", s.Replaces)
-	writeResourceGroup(b, "Import", "←", s.Imports)
-	writeResourceGroup(b, "Read", "<=", s.Reads)
+	writeColoredResourceGroup(b, "Create", "+", s.Creates, colorGreen)
+	writeColoredResourceGroup(b, "Modify", "~", s.Updates, colorYellow)
+	writeColoredResourceGroup(b, "Destroy", "-", s.Destroys, colorRed)
+	writeColoredResourceGroup(b, "Replace", "-/+", s.Replaces, colorRed)
+	writeColoredResourceGroup(b, "Import", "←", s.Imports, colorImport)
 }
 
 func writeApplyResourceSections(b *strings.Builder, s *Summary) {
@@ -248,6 +247,25 @@ func writeApplyResourceSections(b *strings.Builder, s *Summary) {
 
 		b.WriteString("</details>\n\n")
 	}
+}
+
+func writeColoredResourceGroup(b *strings.Builder, title, prefix string, resources []ResourceChange, color string) {
+	if len(resources) == 0 {
+		return
+	}
+
+	badge := createShieldsIOBadge("", fmt.Sprintf("%s (%d)", title, len(resources)), color)
+	b.WriteString(fmt.Sprintf("<details>\n<summary>%s</summary>\n\n```diff\n", badge))
+
+	for _, r := range resources {
+		line := fmt.Sprintf("%s %s", prefix, r.Address)
+		if r.Error != "" {
+			line += fmt.Sprintf("  # ERROR: %s", r.Error)
+		}
+		b.WriteString(line + "\n")
+	}
+
+	b.WriteString("```\n\n</details>\n\n")
 }
 
 func writeResourceGroup(b *strings.Builder, title, prefix string, resources []ResourceChange) {
