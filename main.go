@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jomakori/TF_summarize/internal"
+	"github.com/jomakori/TF_summarize/internal/providers"
 )
 
 // Version is set at build time using ldflags
@@ -75,53 +76,71 @@ func run() error {
 
 	// --- Read terraform output ---
 	inputFile := os.Getenv("TF_PLAN_FILE")
+	jsonPlanFile := os.Getenv("TF_PLAN_JSON")
 	var input string
+	var summary *internal.Summary
+	var err error
 
-	if inputFile != "" {
-		data, err := os.ReadFile(inputFile)
+	// Try JSON plan first if available
+	if jsonPlanFile != "" {
+		data, err := os.ReadFile(jsonPlanFile)
 		if err != nil {
-			return fmt.Errorf("reading plan file %s: %w", inputFile, err)
+			return fmt.Errorf("reading JSON plan file %s: %w", jsonPlanFile, err)
 		}
-		input = string(data)
+		summary, err = internal.ParsePlanJSON(data, workspace, isDestroyPlan)
+		if err != nil {
+			return fmt.Errorf("parsing JSON plan: %w", err)
+		}
+		summary.Phase = phase
 	} else {
-		// Read from stdin
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return fmt.Errorf("reading stdin: %w", err)
+		// Fall back to text parsing
+		if inputFile != "" {
+			data, err := os.ReadFile(inputFile)
+			if err != nil {
+				return fmt.Errorf("reading plan file %s: %w", inputFile, err)
+			}
+			input = string(data)
+		} else {
+			// Read from stdin
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("reading stdin: %w", err)
+			}
+			input = string(data)
 		}
-		input = string(data)
-	}
 
-	if strings.TrimSpace(input) == "" {
-		return fmt.Errorf("no input provided — set TF_PLAN_FILE or pipe terraform output to stdin")
-	}
+		if strings.TrimSpace(input) == "" {
+			return fmt.Errorf("no input provided — set TF_PLAN_FILE, TF_PLAN_JSON, or pipe terraform output to stdin")
+		}
 
-	// --- Parse & render ---
-	summary, err := internal.Parse(input, phase, workspace, isDestroyPlan)
-	if err != nil {
-		return fmt.Errorf("parsing terraform output: %w", err)
+		// --- Parse & render ---
+		summary, err = internal.Parse(input, phase, workspace, isDestroyPlan)
+		if err != nil {
+			return fmt.Errorf("parsing terraform output: %w", err)
+		}
 	}
 
 	markdown := internal.Render(summary)
 
-	// --- Output ---
+	// --- Output using provider pattern ---
 	targets := strings.Split(targetStr, ",")
 	for _, t := range targets {
-		switch strings.TrimSpace(t) {
+		t = strings.TrimSpace(t)
+		var provider internal.OutputProvider
+
+		switch t {
 		case "gha":
-			if err := internal.WriteGHASummary(markdown); err != nil {
-				return fmt.Errorf("writing GHA summary: %w", err)
-			}
-			fmt.Fprintln(os.Stderr, "✓ Written to GitHub Actions step summary")
+			provider = providers.NewGitHubProvider()
 		case "pr":
-			if err := internal.WritePRComment(markdown); err != nil {
-				return fmt.Errorf("writing PR comment: %w", err)
-			}
-			fmt.Fprintln(os.Stderr, "✓ Posted/updated PR comment")
+			provider = providers.NewGitHubProvider()
 		case "stdout":
-			internal.WriteStdout(markdown)
+			provider = providers.NewStdoutProvider()
 		default:
 			return fmt.Errorf("unknown output target: %q (use gha, pr, or stdout)", t)
+		}
+
+		if err := provider.WriteSummary(summary, markdown); err != nil {
+			return fmt.Errorf("writing output via %s provider: %w", provider.Name(), err)
 		}
 	}
 
@@ -141,6 +160,9 @@ func printHelp() {
 A CLI tool that parses Terraform plan and apply output and produces
 beautified Markdown summaries suitable for GitHub Actions or PR comments.
 
+Supports both text output parsing and structured JSON plan parsing for
+accurate resource change detection.
+
 USAGE:
   tf-summarize [flags]
 
@@ -149,7 +171,9 @@ FLAGS:
   -help, -h   Display this help message and exit
 
 ENVIRONMENT VARIABLES:
-  TF_PLAN_FILE        Path to file containing terraform plan/apply output (default: stdin)
+  TF_PLAN_FILE        Path to file containing terraform plan/apply text output (default: stdin)
+  TF_PLAN_JSON        Path to terraform plan JSON file (from 'terraform show -json <planfile>')
+                      When set, uses structured JSON parsing for accurate counts
   TF_WORKSPACE        Workspace name shown in header (default: "default")
   TF_PHASE            "plan" or "apply" - controls header messaging (default: "plan")
   TF_OUTPUT           Output target(s): "stdout", "gha", "pr" (comma-separated, default: "stdout")
@@ -158,16 +182,24 @@ ENVIRONMENT VARIABLES:
   PR_NUMBER           Pull request number to comment on (required for "pr" output)
   GITHUB_API_URL      GitHub API base URL (default: "https://api.github.com")
   TF_EXIT_ON_CHANGES  Exit with code 2 when changes detected (default: "false")
+  DESTROY             Set to "true" or "1" for destroy plans (changes phase badge to red)
 
 EXAMPLES:
-  # Pipe terraform plan output
+  # Pipe terraform plan output (text parsing)
   terraform plan -no-color | tf-summarize
 
-  # Use a saved plan file
+  # Use a saved plan file (text parsing)
   TF_PLAN_FILE=plan.txt tf-summarize
+
+  # Use JSON plan for accurate parsing (recommended)
+  terraform show -json plan.tfplan > plan.json
+  TF_PLAN_JSON=plan.json tf-summarize
 
   # Apply phase with GitHub Actions output
   terraform apply -no-color -auto-approve 2>&1 | TF_PHASE=apply TF_OUTPUT=gha tf-summarize
+
+  # Destroy plan with caution badge
+  terraform plan -destroy -no-color | DESTROY=true tf-summarize
 
 For more information, visit: https://github.com/jomakori/TF_summarize
 `, Version)

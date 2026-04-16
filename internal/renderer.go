@@ -24,8 +24,58 @@ func createShieldsIOBadge(label, message, color string) string {
 	return fmt.Sprintf("![%s](https://img.shields.io/badge/%s-%s-%s)", label, label, encodedMessage, color)
 }
 
-// Render produces a markdown summary for the given Summary.
+// Render produces a complete markdown summary for the given Summary.
 func Render(s *Summary) string {
+	output := RenderFull(s)
+	return output.Full
+}
+
+// RenderFull produces all sections of the markdown summary and returns them separately.
+func RenderFull(s *Summary) *RenderOutput {
+	return &RenderOutput{
+		Summary:   RenderSummary(s),
+		Details:   RenderDetails(s),
+		Outputs:   RenderOutputs(s),
+		RawOutput: RenderRawOutput(s),
+		Full:      renderComplete(s),
+	}
+}
+
+// RenderSummary produces just the header, badges, and summary line.
+func RenderSummary(s *Summary) string {
+	var b strings.Builder
+
+	writeHeader(&b, s)
+	writeBadges(&b, s)
+	writeWarnings(&b, s)
+	writeErrors(&b, s)
+	writeSummaryLine(&b, s)
+
+	return b.String()
+}
+
+// RenderDetails produces the resource sections (creates, updates, destroys, etc).
+func RenderDetails(s *Summary) string {
+	var b strings.Builder
+	writeResourceSections(&b, s)
+	return b.String()
+}
+
+// RenderOutputs produces terraform outputs section (if any).
+func RenderOutputs(s *Summary) string {
+	// Placeholder for future terraform outputs parsing
+	return ""
+}
+
+// RenderRawOutput produces the collapsible raw terraform output section.
+func RenderRawOutput(s *Summary) string {
+	var b strings.Builder
+	writeRawOutput(&b, s)
+	return b.String()
+}
+
+// renderComplete produces the complete markdown output.
+func renderComplete(s *Summary) string {
 	var b strings.Builder
 
 	writeHeader(&b, s)
