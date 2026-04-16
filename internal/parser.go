@@ -46,7 +46,56 @@ var (
 	// Must start with alphanumeric/underscore and contain at least one dot
 	// Exclude quoted strings (CIDR blocks, etc.) by not matching if it starts with a quote
 	compactResourceRe = regexp.MustCompile(`^\s+([+\-~])\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?(?:\.[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?)+)$`)
+
+	// CIDR block pattern for additional validation
+	cidrBlockRe = regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$`)
 )
+
+// isValidResourceAddress checks if an address looks like a valid Terraform resource address.
+// It rejects CIDR blocks, quoted strings, and other non-resource patterns.
+func isValidResourceAddress(addr string) bool {
+	// Reject empty addresses
+	if addr == "" {
+		return false
+	}
+
+	// Reject addresses that start or end with quotes
+	if strings.HasPrefix(addr, `"`) || strings.HasSuffix(addr, `"`) {
+		return false
+	}
+
+	// Reject addresses that start or end with single quotes
+	if strings.HasPrefix(addr, `'`) || strings.HasSuffix(addr, `'`) {
+		return false
+	}
+
+	// Reject CIDR blocks (e.g., "10.0.0.0/16")
+	// Strip quotes first in case they're embedded
+	cleanAddr := strings.Trim(addr, `"',`)
+	if cidrBlockRe.MatchString(cleanAddr) {
+		return false
+	}
+
+	// Reject addresses that contain CIDR notation
+	if strings.Contains(addr, "/") && strings.Count(addr, ".") >= 3 {
+		return false
+	}
+
+	// Valid resource addresses must start with a letter or underscore
+	if len(addr) > 0 {
+		first := addr[0]
+		if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || first == '_') {
+			return false
+		}
+	}
+
+	// Valid resource addresses must contain at least one dot (resource_type.name)
+	if !strings.Contains(addr, ".") {
+		return false
+	}
+
+	return true
+}
 
 // Parse reads terraform plan or apply output and returns a Summary.
 func Parse(input string, phase Phase, workspace string, isDestroyPlan bool) (*Summary, error) {
@@ -111,39 +160,54 @@ func Parse(input string, phase Phase, workspace string, isDestroyPlan bool) (*Su
 		// Parse "will be X" lines (plan output)
 		if m := willCreateRe.FindStringSubmatch(line); len(m) > 1 {
 			addr := stripANSI(m[1])
-			s.Creates = append(s.Creates, ResourceChange{Address: addr, Action: ActionCreate})
+			if isValidResourceAddress(addr) {
+				s.Creates = append(s.Creates, ResourceChange{Address: addr, Action: ActionCreate})
+			}
 		} else if m := willDestroyRe.FindStringSubmatch(line); len(m) > 1 {
 			addr := stripANSI(m[1])
-			s.Destroys = append(s.Destroys, ResourceChange{Address: addr, Action: ActionDestroy})
+			if isValidResourceAddress(addr) {
+				s.Destroys = append(s.Destroys, ResourceChange{Address: addr, Action: ActionDestroy})
+			}
 		} else if m := willReplaceRe.FindStringSubmatch(line); len(m) > 1 {
 			addr := stripANSI(m[1])
-			s.Replaces = append(s.Replaces, ResourceChange{Address: addr, Action: ActionReplace})
+			if isValidResourceAddress(addr) {
+				s.Replaces = append(s.Replaces, ResourceChange{Address: addr, Action: ActionReplace})
+			}
 		} else if m := willUpdateRe.FindStringSubmatch(line); len(m) > 1 {
 			addr := stripANSI(m[1])
-			s.Updates = append(s.Updates, ResourceChange{Address: addr, Action: ActionUpdate})
+			if isValidResourceAddress(addr) {
+				s.Updates = append(s.Updates, ResourceChange{Address: addr, Action: ActionUpdate})
+			}
 		} else if m := willReadRe.FindStringSubmatch(line); len(m) > 1 {
 			addr := stripANSI(m[1])
-			s.Reads = append(s.Reads, ResourceChange{Address: addr, Action: ActionRead})
+			if isValidResourceAddress(addr) {
+				s.Reads = append(s.Reads, ResourceChange{Address: addr, Action: ActionRead})
+			}
 		} else if m := willImportRe.FindStringSubmatch(line); len(m) > 1 {
 			addr := stripANSI(m[1])
-			s.Imports = append(s.Imports, ResourceChange{Address: addr, Action: ActionImport})
+			if isValidResourceAddress(addr) {
+				s.Imports = append(s.Imports, ResourceChange{Address: addr, Action: ActionImport})
+			}
 		}
 
 		// Parse compact resource lines (from plan -no-color output summary sections)
 		if m := compactResourceRe.FindStringSubmatch(line); len(m) > 2 {
 			addr := stripANSI(m[2])
-			switch m[1] {
-			case "+":
-				if !containsAddr(s.Creates, addr) {
-					s.Creates = append(s.Creates, ResourceChange{Address: addr, Action: ActionCreate})
-				}
-			case "-":
-				if !containsAddr(s.Destroys, addr) {
-					s.Destroys = append(s.Destroys, ResourceChange{Address: addr, Action: ActionDestroy})
-				}
-			case "~":
-				if !containsAddr(s.Updates, addr) {
-					s.Updates = append(s.Updates, ResourceChange{Address: addr, Action: ActionUpdate})
+			// Additional validation to filter out CIDR blocks and other non-resource patterns
+			if isValidResourceAddress(addr) {
+				switch m[1] {
+				case "+":
+					if !containsAddr(s.Creates, addr) {
+						s.Creates = append(s.Creates, ResourceChange{Address: addr, Action: ActionCreate})
+					}
+				case "-":
+					if !containsAddr(s.Destroys, addr) {
+						s.Destroys = append(s.Destroys, ResourceChange{Address: addr, Action: ActionDestroy})
+					}
+				case "~":
+					if !containsAddr(s.Updates, addr) {
+						s.Updates = append(s.Updates, ResourceChange{Address: addr, Action: ActionUpdate})
+					}
 				}
 			}
 		}
@@ -227,7 +291,55 @@ func Parse(input string, phase Phase, workspace string, isDestroyPlan bool) (*Su
 	// Count imports
 	s.ToImport = len(s.Imports)
 
+	// Synchronize counters with actual resource lists to prevent drift
+	// The plan summary line (ToAdd, ToChange, ToDestroy) is the authoritative source
+	// but if we parsed more or fewer resources, we need to reconcile
+	syncCounters(s)
+
 	return s, nil
+}
+
+// syncCounters ensures the resource lists don't contain invalid entries.
+// The plan summary line (ToAdd, ToChange, ToDestroy) is the authoritative source
+// and should NOT be modified. We only filter out invalid resources from the lists.
+func syncCounters(s *Summary) {
+	// Filter out any invalid resources that may have slipped through parsing
+	s.Creates = filterValidResources(s.Creates)
+	s.Updates = filterValidResources(s.Updates)
+	s.Destroys = filterValidResources(s.Destroys)
+	s.Replaces = filterValidResources(s.Replaces)
+	s.Imports = filterValidResources(s.Imports)
+	s.Reads = filterValidResources(s.Reads)
+
+	// Update import count based on filtered list
+	s.ToImport = len(s.Imports)
+
+	// If we have more resources in a list than the plan summary indicates,
+	// trim the excess (this handles cases where invalid entries slipped through)
+	if s.ToAdd > 0 && len(s.Creates) > s.ToAdd {
+		s.Creates = s.Creates[:s.ToAdd]
+	}
+	if s.ToChange > 0 && len(s.Updates) > s.ToChange {
+		s.Updates = s.Updates[:s.ToChange]
+	}
+	if s.ToDestroy > 0 && len(s.Destroys) > s.ToDestroy {
+		s.Destroys = s.Destroys[:s.ToDestroy]
+	}
+}
+
+// filterValidResources removes any resources with invalid addresses from the list.
+func filterValidResources(resources []ResourceChange) []ResourceChange {
+	if len(resources) == 0 {
+		return resources
+	}
+
+	valid := make([]ResourceChange, 0, len(resources))
+	for _, r := range resources {
+		if isValidResourceAddress(r.Address) {
+			valid = append(valid, r)
+		}
+	}
+	return valid
 }
 
 // inferActionFromError guesses the action from the error message text.
