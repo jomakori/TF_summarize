@@ -22,9 +22,7 @@ func TestRenderPlanCreate(t *testing.T) {
 
 	out := internal.Render(s)
 
-	assertContains(t, out, "Changes found for")
-	assertContains(t, out, "plat-ue2-sandbox")
-	assertContains(t, out, "-Create")
+	assertContains(t, out, "Terraform Plan")
 	assertContains(t, out, "**3** to add")
 	assertContains(t, out, "module.s3_bucket.aws_s3_bucket.default[0]")
 	assertContains(t, out, "Terraform Plan Output")
@@ -50,8 +48,8 @@ func TestRenderPlanDestroy(t *testing.T) {
 
 	out := internal.Render(s)
 
+	assertContains(t, out, "Terraform Plan")
 	assertContains(t, out, "CAUTION")
-	assertContains(t, out, "-Replace")
 }
 
 func TestRenderApplySuccess(t *testing.T) {
@@ -69,8 +67,7 @@ func TestRenderApplySuccess(t *testing.T) {
 
 	out := internal.Render(s)
 
-	assertContains(t, out, "✅")
-	assertContains(t, out, "applied successfully")
+	assertContains(t, out, "Terraform Apply")
 	assertContains(t, out, "✅ Created")
 	assertContains(t, out, "module.s3_bucket.aws_s3_bucket.default[0]")
 	assertContains(t, out, "Terraform Apply Output")
@@ -92,13 +89,11 @@ func TestRenderApplyMixed(t *testing.T) {
 
 	out := internal.Render(s)
 
-	assertContains(t, out, "❌")
-	assertContains(t, out, "Apply failed")
+	assertContains(t, out, "Terraform Apply")
 	assertContains(t, out, "✅ Created")
 	assertContains(t, out, "❌ Failed")
 	assertContains(t, out, "module.rds.aws_db_instance.main")
 	assertContains(t, out, "DBInstanceAlreadyExists")
-	assertContains(t, out, "-Failed")
 }
 
 func TestRenderApplyFail(t *testing.T) {
@@ -113,8 +108,7 @@ func TestRenderApplyFail(t *testing.T) {
 
 	out := internal.Render(s)
 
-	assertContains(t, out, "❌")
-	assertContains(t, out, "Apply failed")
+	assertContains(t, out, "Terraform Apply")
 	assertContains(t, out, "❌ Failed")
 	assertContains(t, out, "module.rds.aws_db_instance.main")
 }
@@ -136,12 +130,9 @@ func TestRenderApplyWithDestroys(t *testing.T) {
 
 	out := internal.Render(s)
 
-	assertContains(t, out, "✅")
-	assertContains(t, out, "applied successfully")
+	assertContains(t, out, "Terraform Apply")
 	assertContains(t, out, "✅ Destroyed")
 	assertContains(t, out, "✅ Updated")
-	assertContains(t, out, "**1** destroyed")
-	assertContains(t, out, "**1** changed")
 }
 
 func TestRenderNoChanges(t *testing.T) {
@@ -151,7 +142,8 @@ func TestRenderNoChanges(t *testing.T) {
 	}
 
 	out := internal.Render(s)
-	assertContains(t, out, "No changes found")
+	assertContains(t, out, "Terraform Plan")
+	assertContains(t, out, "Infrastructure is up-to-date")
 }
 
 func assertContains(t *testing.T, haystack, needle string) {

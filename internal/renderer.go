@@ -8,12 +8,12 @@ import (
 
 // Color constants for shields.io badges
 const (
-	colorGreen       = "28a745" // New changes (Create) & successful Apply
-	colorRed         = "dc3545" // Deleted changes (Remove/Replace), Destroy Plan, Failed Apply
+	colorGreen       = "28a745" // New changes (Create) / Successful Apply
+	colorRed         = "dc3545" // Deleted changes (Remove/Replace) / Destroy Plan, Failed Apply
 	colorYellow      = "FFC107" // Modifications (Modify) - vibrant yellow
 	colorNoChanges   = "0366d6" // No changes (blue)
 	colorImport      = "6f42c1" // Import (purple)
-	colorOrange      = "fd7e14" // Warnings/Drift
+	colorOrange      = "fd7e14" // Warnings / Drift / Replace
 	colorPlan        = "007bff" // Phase badge (Plan) - blue
 )
 
@@ -40,22 +40,14 @@ func Render(s *Summary) string {
 }
 
 func writeHeader(b *strings.Builder, s *Summary) {
-	switch s.Phase {
-	case PhaseApply:
-		if s.ApplySucceeded && len(s.Errors) == 0 {
-			b.WriteString(fmt.Sprintf("## ✅ Changes applied successfully for `%s`\n\n", s.Workspace))
-		} else if len(s.Errors) > 0 {
-			b.WriteString(fmt.Sprintf("## ❌ Apply failed for `%s`\n\n", s.Workspace))
-		} else {
-			b.WriteString(fmt.Sprintf("## ⏳ Apply results for `%s`\n\n", s.Workspace))
-		}
-	default:
-		if s.ToAdd == 0 && s.ToChange == 0 && s.ToDestroy == 0 && s.ToImport == 0 {
-			b.WriteString(fmt.Sprintf("## ✅ No changes found for `%s`\n\n", s.Workspace))
-		} else {
-			b.WriteString(fmt.Sprintf("## 📋 Changes found for `%s`\n\n", s.Workspace))
-		}
+	phaseTitle := "Terraform Plan"
+	if s.Phase == PhaseApply {
+		phaseTitle = "Terraform Apply"
+	} else if s.IsDestroyPlan {
+		phaseTitle = "Terraform Destroy"
 	}
+	
+	b.WriteString(fmt.Sprintf("## %s\n\n", phaseTitle))
 }
 
 func writeBadges(b *strings.Builder, s *Summary) {
@@ -254,8 +246,7 @@ func writeColoredResourceGroup(b *strings.Builder, title, prefix string, resourc
 		return
 	}
 
-	badge := createShieldsIOBadge("", fmt.Sprintf("%s (%d)", title, len(resources)), color)
-	b.WriteString(fmt.Sprintf("<details>\n<summary>%s</summary>\n\n```diff\n", badge))
+	b.WriteString(fmt.Sprintf("<details>\n<summary><b>%s</b> <b>(%d)</b></summary>\n\n```diff\n", title, len(resources)))
 
 	for _, r := range resources {
 		line := fmt.Sprintf("%s %s", prefix, r.Address)
