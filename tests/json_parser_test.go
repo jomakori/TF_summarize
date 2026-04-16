@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/jomakori/TF_summarize/internal"
+	"github.com/jomakori/TF_summarize/internal/parser"
 )
 
 // TestParseSimplePlanJSON tests parsing a simple terraform plan JSON.
@@ -56,7 +57,7 @@ func TestParseSimplePlanJSON(t *testing.T) {
 		"configuration": {}
 	}`)
 
-	summary, err := internal.ParsePlanJSON(jsonData, "test", false)
+	summary, err := parser.ParsePlanJSON(jsonData, "test", false)
 	if err != nil {
 		t.Fatalf("ParsePlanJSON failed: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestParseReplaceJSON(t *testing.T) {
 		"configuration": {}
 	}`)
 
-	summary, err := internal.ParsePlanJSON(jsonData, "test", false)
+	summary, err := parser.ParsePlanJSON(jsonData, "test", false)
 	if err != nil {
 		t.Fatalf("ParsePlanJSON failed: %v", err)
 	}
@@ -180,7 +181,7 @@ func TestParseUpdateJSON(t *testing.T) {
 		"configuration": {}
 	}`)
 
-	summary, err := internal.ParsePlanJSON(jsonData, "test", false)
+	summary, err := parser.ParsePlanJSON(jsonData, "test", false)
 	if err != nil {
 		t.Fatalf("ParsePlanJSON failed: %v", err)
 	}
@@ -210,7 +211,7 @@ func TestParseNoChangesJSON(t *testing.T) {
 		"configuration": {}
 	}`)
 
-	summary, err := internal.ParsePlanJSON(jsonData, "test", false)
+	summary, err := parser.ParsePlanJSON(jsonData, "test", false)
 	if err != nil {
 		t.Fatalf("ParsePlanJSON failed: %v", err)
 	}
@@ -224,7 +225,7 @@ func TestParseNoChangesJSON(t *testing.T) {
 func TestParseInvalidJSON(t *testing.T) {
 	jsonData := []byte(`{invalid json}`)
 
-	_, err := internal.ParsePlanJSON(jsonData, "test", false)
+	_, err := parser.ParsePlanJSON(jsonData, "test", false)
 	if err == nil {
 		t.Error("Expected error for invalid JSON, got nil")
 	}
@@ -258,7 +259,7 @@ func TestParseDestroyPlanJSON(t *testing.T) {
 		"configuration": {}
 	}`)
 
-	summary, err := internal.ParsePlanJSON(jsonData, "prod", true)
+	summary, err := parser.ParsePlanJSON(jsonData, "prod", true)
 	if err != nil {
 		t.Fatalf("ParsePlanJSON failed: %v", err)
 	}

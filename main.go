@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/jomakori/TF_summarize/internal"
+	"github.com/jomakori/TF_summarize/internal/parser"
 	"github.com/jomakori/TF_summarize/internal/providers"
+	"github.com/jomakori/TF_summarize/internal/render"
 )
 
 // Version is set at build time using ldflags
@@ -40,20 +42,13 @@ func run() error {
 	}
 
 	// --- Read configuration from env vars ---
+	workspace := internal.GetEnvWithFallback("default", "TF_WORKSPACE", "WORKSPACE")
+	phaseStr := strings.ToLower(internal.GetEnv("TF_PHASE", "plan"))
+	isDestroyPlan := internal.GetEnvBool("DESTROY")
+	targetStr := strings.ToLower(internal.GetEnv("TF_OUTPUT", "stdout"))
+	inputFile := internal.GetEnv("TF_PLAN_FILE", "")
+	jsonPlanFile := internal.GetEnv("TF_PLAN_JSON", "")
 
-	workspace := os.Getenv("TF_WORKSPACE")
-	if workspace == "" {
-		workspace = os.Getenv("WORKSPACE") // fallback
-	}
-	if workspace == "" {
-		workspace = "default"
-	}
-
-	// Phase: "plan" or "apply"
-	phaseStr := strings.ToLower(os.Getenv("TF_PHASE"))
-	if phaseStr == "" {
-		phaseStr = "plan"
-	}
 	var phase internal.Phase
 	switch phaseStr {
 	case "apply":
@@ -61,22 +56,6 @@ func run() error {
 	default:
 		phase = internal.PhasePlan
 	}
-
-	// Check if this is a destroy plan
-	isDestroyPlan := false
-	if destroyEnv := os.Getenv("DESTROY"); destroyEnv != "" {
-		isDestroyPlan = strings.ToLower(destroyEnv) == "true" || destroyEnv == "1"
-	}
-
-	// Output target: "gha", "pr", "stdout" (default), or comma-separated combo
-	targetStr := strings.ToLower(os.Getenv("TF_OUTPUT"))
-	if targetStr == "" {
-		targetStr = "stdout"
-	}
-
-	// --- Read terraform output ---
-	inputFile := os.Getenv("TF_PLAN_FILE")
-	jsonPlanFile := os.Getenv("TF_PLAN_JSON")
 	var input string
 	var summary *internal.Summary
 	var err error
@@ -87,7 +66,7 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("reading JSON plan file %s: %w", jsonPlanFile, err)
 		}
-		summary, err = internal.ParsePlanJSON(data, workspace, isDestroyPlan)
+		summary, err = parser.ParsePlanJSON(data, workspace, isDestroyPlan)
 		if err != nil {
 			return fmt.Errorf("parsing JSON plan: %w", err)
 		}
@@ -114,13 +93,13 @@ func run() error {
 		}
 
 		// --- Parse & render ---
-		summary, err = internal.Parse(input, phase, workspace, isDestroyPlan)
+		summary, err = parser.Parse(input, phase, workspace, isDestroyPlan)
 		if err != nil {
 			return fmt.Errorf("parsing terraform output: %w", err)
 		}
 	}
 
-	markdown := internal.Render(summary)
+	markdown := render.Render(summary)
 
 	// --- Output using provider pattern ---
 	targets := strings.Split(targetStr, ",")
@@ -145,7 +124,7 @@ func run() error {
 	}
 
 	// Set exit code based on changes (useful for CI)
-	if os.Getenv("TF_EXIT_ON_CHANGES") == "true" {
+	if internal.GetEnvBool("TF_EXIT_ON_CHANGES") {
 		if summary.ToAdd > 0 || summary.ToChange > 0 || summary.ToDestroy > 0 {
 			os.Exit(2) // signal "changes detected" without being a real error
 		}

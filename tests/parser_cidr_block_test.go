@@ -5,12 +5,10 @@ import (
 	"testing"
 
 	"github.com/jomakori/TF_summarize/internal"
+	"github.com/jomakori/TF_summarize/internal/parser"
 )
 
 func TestParseCIDRBlockNotParsedAsResource(t *testing.T) {
-	// Test with the actual terraform plan output that shows the issue
-	// The plan says "15 to add" but the CIDR block line "+ "10.0.0.0/16"," 
-	// should NOT be counted as a resource
 	input := `
 Terraform used the selected providers to generate the following execution plan.
 
@@ -30,7 +28,7 @@ Terraform used the selected providers to generate the following execution plan.
 Plan: 2 to add, 0 to change, 0 to destroy.
 `
 
-	s, err := internal.Parse(input, internal.PhasePlan, "test", false)
+	s, err := parser.Parse(input, internal.PhasePlan, "test", false)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}

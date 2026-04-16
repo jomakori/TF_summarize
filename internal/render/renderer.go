@@ -1,38 +1,21 @@
-package internal
+package render
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
-)
 
-// Color constants for shields.io badges
-const (
-	colorGreen       = "28a745" // New changes (Create) / Successful Apply
-	colorRed         = "dc3545" // Deleted changes (Remove/Replace) / Destroy Plan, Failed Apply
-	colorYellow      = "FFC107" // Modifications (Modify) - vibrant yellow
-	colorNoChanges   = "0366d6" // No changes (blue)
-	colorImport      = "6f42c1" // Import (purple)
-	colorOrange      = "fd7e14" // Warnings / Drift / Replace
-	colorPlan        = "007bff" // Phase badge (Plan) - blue
+	"github.com/jomakori/TF_summarize/internal"
 )
-
-// createShieldsIOBadge creates a shields.io badge URL
-func createShieldsIOBadge(label, message, color string) string {
-	// URL encode message for shields.io badge path (spaces become %20, not +)
-	encodedMessage := strings.ReplaceAll(url.QueryEscape(message), "+", "%20")
-	return fmt.Sprintf("![%s](https://img.shields.io/badge/%s-%s-%s)", label, label, encodedMessage, color)
-}
 
 // Render produces a complete markdown summary for the given Summary.
-func Render(s *Summary) string {
+func Render(s *internal.Summary) string {
 	output := RenderFull(s)
 	return output.Full
 }
 
 // RenderFull produces all sections of the markdown summary and returns them separately.
-func RenderFull(s *Summary) *RenderOutput {
-	return &RenderOutput{
+func RenderFull(s *internal.Summary) *internal.RenderOutput {
+	return &internal.RenderOutput{
 		Summary:   RenderSummary(s),
 		Details:   RenderDetails(s),
 		Outputs:   RenderOutputs(s),
@@ -42,42 +25,37 @@ func RenderFull(s *Summary) *RenderOutput {
 }
 
 // RenderSummary produces just the header, badges, and summary line.
-func RenderSummary(s *Summary) string {
+func RenderSummary(s *internal.Summary) string {
 	var b strings.Builder
-
 	writeHeader(&b, s)
 	writeBadges(&b, s)
 	writeWarnings(&b, s)
 	writeErrors(&b, s)
 	writeSummaryLine(&b, s)
-
 	return b.String()
 }
 
 // RenderDetails produces the resource sections (creates, updates, destroys, etc).
-func RenderDetails(s *Summary) string {
+func RenderDetails(s *internal.Summary) string {
 	var b strings.Builder
 	writeResourceSections(&b, s)
 	return b.String()
 }
 
 // RenderOutputs produces terraform outputs section (if any).
-func RenderOutputs(s *Summary) string {
-	// Placeholder for future terraform outputs parsing
+func RenderOutputs(s *internal.Summary) string {
 	return ""
 }
 
 // RenderRawOutput produces the collapsible raw terraform output section.
-func RenderRawOutput(s *Summary) string {
+func RenderRawOutput(s *internal.Summary) string {
 	var b strings.Builder
 	writeRawOutput(&b, s)
 	return b.String()
 }
 
-// renderComplete produces the complete markdown output.
-func renderComplete(s *Summary) string {
+func renderComplete(s *internal.Summary) string {
 	var b strings.Builder
-
 	writeHeader(&b, s)
 	writeBadges(&b, s)
 	writeWarnings(&b, s)
@@ -85,95 +63,86 @@ func renderComplete(s *Summary) string {
 	writeSummaryLine(&b, s)
 	writeResourceSections(&b, s)
 	writeRawOutput(&b, s)
-
 	return b.String()
 }
 
-func writeHeader(b *strings.Builder, s *Summary) {
+func writeHeader(b *strings.Builder, s *internal.Summary) {
 	phaseTitle := "Terraform Plan"
-	if s.Phase == PhaseApply {
+	if s.Phase == internal.PhaseApply {
 		phaseTitle = "Terraform Apply"
 	} else if s.IsDestroyPlan {
 		phaseTitle = "Terraform Destroy"
 	}
-	
 	b.WriteString(fmt.Sprintf("## %s\n\n", phaseTitle))
 }
 
-func writeBadges(b *strings.Builder, s *Summary) {
+func writeBadges(b *strings.Builder, s *internal.Summary) {
 	var badges []string
 
-	// Phase badge with color dependent on plan type and success
 	phaseBadge := "Plan"
-	phaseColor := colorPlan
-	
-	if s.Phase == PhaseApply {
+	phaseColor := internal.ColorPlan
+
+	if s.Phase == internal.PhaseApply {
 		phaseBadge = "Apply"
-		// Apply phase: green for success, red for failures
 		if len(s.Failures) > 0 || (s.ApplyError != "" && !s.ApplySucceeded) {
-			phaseColor = colorRed // red for failed apply
+			phaseColor = internal.ColorRed
 		} else {
-			phaseColor = colorGreen // green for successful apply
+			phaseColor = internal.ColorGreen
 		}
 	} else {
-		// Plan phase: blue for regular plan, red for destroy plan
 		if s.IsDestroyPlan {
 			phaseBadge = "Destroy"
-			phaseColor = colorRed // red for destroy plan
+			phaseColor = internal.ColorRed
 		}
 	}
-	
-	badges = append(badges, createShieldsIOBadge("Terraform", phaseBadge, phaseColor))
 
-	// Individual action badges with counts (PascalCase with requested terminology)
+	badges = append(badges, internal.CreateShieldsIOBadge("Terraform", phaseBadge, phaseColor))
+
 	if s.ToAdd > 0 {
 		msg := fmt.Sprintf("Create (%d)", s.ToAdd)
-		badges = append(badges, createShieldsIOBadge("", msg, colorGreen))
+		badges = append(badges, internal.CreateShieldsIOBadge("", msg, internal.ColorGreen))
 	}
 
 	if s.ToChange > 0 {
 		msg := fmt.Sprintf("Modify (%d)", s.ToChange)
-		badges = append(badges, createShieldsIOBadge("", msg, colorYellow))
+		badges = append(badges, internal.CreateShieldsIOBadge("", msg, internal.ColorYellow))
 	}
 
 	if s.ToDestroy > 0 {
 		msg := fmt.Sprintf("Remove (%d)", s.ToDestroy)
-		badges = append(badges, createShieldsIOBadge("", msg, colorRed))
+		badges = append(badges, internal.CreateShieldsIOBadge("", msg, internal.ColorRed))
 	}
 
 	if len(s.Replaces) > 0 {
 		msg := fmt.Sprintf("Replace (%d)", len(s.Replaces))
-		badges = append(badges, createShieldsIOBadge("", msg, colorRed))
+		badges = append(badges, internal.CreateShieldsIOBadge("", msg, internal.ColorRed))
 	}
 
 	if s.ToImport > 0 {
 		msg := fmt.Sprintf("Import (%d)", s.ToImport)
-		badges = append(badges, createShieldsIOBadge("", msg, colorImport))
+		badges = append(badges, internal.CreateShieldsIOBadge("", msg, internal.ColorImport))
 	}
 
-	// Show NO CHANGES badge only if there are truly no changes (blue color)
 	if s.ToAdd == 0 && s.ToChange == 0 && s.ToDestroy == 0 && s.ToImport == 0 && len(s.Replaces) == 0 {
-		badges = append(badges, createShieldsIOBadge("", "No Changes", colorNoChanges))
+		badges = append(badges, internal.CreateShieldsIOBadge("", "No Changes", internal.ColorNoChanges))
 	}
 
-	// Drift detected badge
 	if s.DriftDetected {
-		badges = append(badges, createShieldsIOBadge("", "Drift Detected", colorOrange))
+		badges = append(badges, internal.CreateShieldsIOBadge("", "Drift Detected", internal.ColorOrange))
 	}
 
-	// Failures badge for apply phase
-	if s.Phase == PhaseApply && len(s.Failures) > 0 {
+	if s.Phase == internal.PhaseApply && len(s.Failures) > 0 {
 		failureMsg := fmt.Sprintf("Failed (%d)", len(s.Failures))
-		badges = append(badges, createShieldsIOBadge("", failureMsg, colorRed))
+		badges = append(badges, internal.CreateShieldsIOBadge("", failureMsg, internal.ColorRed))
 	}
 
 	b.WriteString(strings.Join(badges, " "))
 	b.WriteString("\n\n")
 }
 
-func writeWarnings(b *strings.Builder, s *Summary) {
+func writeWarnings(b *strings.Builder, s *internal.Summary) {
 	if s.ToDestroy > 0 || len(s.Replaces) > 0 {
-		if s.Phase == PhasePlan {
+		if s.Phase == internal.PhasePlan {
 			b.WriteString("> [!CAUTION]\n")
 			b.WriteString("> **Terraform will delete resources!**\n")
 			b.WriteString("> This plan contains resource delete operations. Please check the plan result very carefully.\n\n")
@@ -190,19 +159,17 @@ func writeWarnings(b *strings.Builder, s *Summary) {
 	}
 }
 
-func writeErrors(b *strings.Builder, s *Summary) {
-	if s.Phase == PhaseApply && len(s.Failures) > 0 {
-		// Detailed per-resource errors
-		return // rendered in resource sections instead
+func writeErrors(b *strings.Builder, s *internal.Summary) {
+	if s.Phase == internal.PhaseApply && len(s.Failures) > 0 {
+		return
 	}
-	// Fallback: show raw errors if we couldn't associate them with resources
 	for _, e := range s.Errors {
 		b.WriteString(fmt.Sprintf("> [!CAUTION]\n> **Error:** %s\n\n", e))
 	}
 }
 
-func writeSummaryLine(b *strings.Builder, s *Summary) {
-	if s.Phase == PhaseApply {
+func writeSummaryLine(b *strings.Builder, s *internal.Summary) {
+	if s.Phase == internal.PhaseApply {
 		writeApplySummaryLine(b, s)
 		return
 	}
@@ -229,7 +196,7 @@ func writeSummaryLine(b *strings.Builder, s *Summary) {
 	b.WriteString(fmt.Sprintf("**Plan:** %s\n\n", strings.Join(parts, ", ")))
 }
 
-func writeApplySummaryLine(b *strings.Builder, s *Summary) {
+func writeApplySummaryLine(b *strings.Builder, s *internal.Summary) {
 	parts := []string{}
 	if s.ToAdd > 0 {
 		parts = append(parts, fmt.Sprintf("**%d** added", s.ToAdd))
@@ -254,26 +221,24 @@ func writeApplySummaryLine(b *strings.Builder, s *Summary) {
 	}
 }
 
-func writeResourceSections(b *strings.Builder, s *Summary) {
-	if s.Phase == PhaseApply {
+func writeResourceSections(b *strings.Builder, s *internal.Summary) {
+	if s.Phase == internal.PhaseApply {
 		writeApplyResourceSections(b, s)
 		return
 	}
 
-	writeColoredResourceGroup(b, "Create", "+", s.Creates, colorGreen)
-	writeColoredResourceGroup(b, "Modify", "~", s.Updates, colorYellow)
-	writeColoredResourceGroup(b, "Destroy", "-", s.Destroys, colorRed)
-	writeColoredResourceGroup(b, "Replace", "-/+", s.Replaces, colorRed)
-	writeColoredResourceGroup(b, "Import", "←", s.Imports, colorImport)
+	writeColoredResourceGroup(b, "Create", "+", s.Creates, internal.ColorGreen)
+	writeColoredResourceGroup(b, "Modify", "~", s.Updates, internal.ColorYellow)
+	writeColoredResourceGroup(b, "Destroy", "-", s.Destroys, internal.ColorRed)
+	writeColoredResourceGroup(b, "Replace", "-/+", s.Replaces, internal.ColorRed)
+	writeColoredResourceGroup(b, "Import", "←", s.Imports, internal.ColorImport)
 }
 
-func writeApplyResourceSections(b *strings.Builder, s *Summary) {
-	// Succeeded resources
+func writeApplyResourceSections(b *strings.Builder, s *internal.Summary) {
 	writeApplyResourceGroup(b, "Created", "+", "✅", s.Creates)
 	writeApplyResourceGroup(b, "Updated", "~", "✅", s.Updates)
 	writeApplyResourceGroup(b, "Destroyed", "-", "✅", s.Destroys)
 
-	// Failed resources with error details
 	if len(s.Failures) > 0 {
 		b.WriteString("<details open>\n<summary><b>❌ Failed</b> (")
 		b.WriteString(fmt.Sprintf("%d", len(s.Failures)))
@@ -291,7 +256,7 @@ func writeApplyResourceSections(b *strings.Builder, s *Summary) {
 	}
 }
 
-func writeColoredResourceGroup(b *strings.Builder, title, prefix string, resources []ResourceChange, color string) {
+func writeColoredResourceGroup(b *strings.Builder, title, prefix string, resources []internal.ResourceChange, color string) {
 	if len(resources) == 0 {
 		return
 	}
@@ -309,25 +274,7 @@ func writeColoredResourceGroup(b *strings.Builder, title, prefix string, resourc
 	b.WriteString("```\n\n</details>\n\n")
 }
 
-func writeResourceGroup(b *strings.Builder, title, prefix string, resources []ResourceChange) {
-	if len(resources) == 0 {
-		return
-	}
-
-	b.WriteString(fmt.Sprintf("<details>\n<summary><b>%s</b> (%d)</summary>\n\n```diff\n", title, len(resources)))
-
-	for _, r := range resources {
-		line := fmt.Sprintf("%s %s", prefix, r.Address)
-		if r.Error != "" {
-			line += fmt.Sprintf("  # ERROR: %s", r.Error)
-		}
-		b.WriteString(line + "\n")
-	}
-
-	b.WriteString("```\n\n</details>\n\n")
-}
-
-func writeApplyResourceGroup(b *strings.Builder, title, prefix, icon string, resources []ResourceChange) {
+func writeApplyResourceGroup(b *strings.Builder, title, prefix, icon string, resources []internal.ResourceChange) {
 	if len(resources) == 0 {
 		return
 	}
@@ -341,14 +288,14 @@ func writeApplyResourceGroup(b *strings.Builder, title, prefix, icon string, res
 	b.WriteString("```\n\n</details>\n\n")
 }
 
-func writeRawOutput(b *strings.Builder, s *Summary) {
+func writeRawOutput(b *strings.Builder, s *internal.Summary) {
 	raw := strings.TrimSpace(s.RawOutput)
 	if raw == "" {
 		return
 	}
 
 	title := "Terraform Plan Output"
-	if s.Phase == PhaseApply {
+	if s.Phase == internal.PhaseApply {
 		title = "Terraform Apply Output"
 	}
 
@@ -357,59 +304,42 @@ func writeRawOutput(b *strings.Builder, s *Summary) {
 	b.WriteString("\n```\n\n</details>\n")
 }
 
-// colorizeOutput adds color codes to terraform output for better readability
-func colorizeOutput(output string, phase Phase) string {
+func colorizeOutput(output string, phase internal.Phase) string {
 	lines := strings.Split(output, "\n")
 	var result []string
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
-		// Color code based on terraform output patterns
+
 		switch {
-		// Plan phase: + for creates (green)
 		case strings.HasPrefix(trimmed, "+ "):
 			result = append(result, fmt.Sprintf("+ %s", strings.TrimPrefix(trimmed, "+ ")))
-		// Plan phase: - for destroys (red)
 		case strings.HasPrefix(trimmed, "- "):
 			result = append(result, fmt.Sprintf("- %s", strings.TrimPrefix(trimmed, "- ")))
-		// Plan phase: ~ for updates (yellow)
 		case strings.HasPrefix(trimmed, "~ "):
 			result = append(result, fmt.Sprintf("~ %s", strings.TrimPrefix(trimmed, "~ ")))
-		// Plan phase: -/+ for replaces (orange)
 		case strings.HasPrefix(trimmed, "-/+ "):
 			result = append(result, fmt.Sprintf("-/+ %s", strings.TrimPrefix(trimmed, "-/+ ")))
-		// Apply phase: Creating... (green)
 		case strings.Contains(trimmed, "Creating..."):
 			result = append(result, fmt.Sprintf("+ %s", trimmed))
-		// Apply phase: Destroying... (red)
 		case strings.Contains(trimmed, "Destroying..."):
 			result = append(result, fmt.Sprintf("- %s", trimmed))
-		// Apply phase: Modifying... (yellow)
 		case strings.Contains(trimmed, "Modifying..."):
 			result = append(result, fmt.Sprintf("~ %s", trimmed))
-		// Apply phase: Creation complete (green)
 		case strings.Contains(trimmed, "Creation complete"):
 			result = append(result, fmt.Sprintf("+ %s", trimmed))
-		// Apply phase: Destruction complete (red)
 		case strings.Contains(trimmed, "Destruction complete"):
 			result = append(result, fmt.Sprintf("- %s", trimmed))
-		// Apply phase: Modifications complete (yellow)
 		case strings.Contains(trimmed, "Modifications complete"):
 			result = append(result, fmt.Sprintf("~ %s", trimmed))
-		// Error lines (red)
 		case strings.HasPrefix(trimmed, "Error:"):
 			result = append(result, fmt.Sprintf("- %s", trimmed))
-		// Warning lines (yellow)
 		case strings.HasPrefix(trimmed, "Warning:"):
 			result = append(result, fmt.Sprintf("~ %s", trimmed))
-		// Plan summary line
 		case strings.HasPrefix(trimmed, "Plan:"):
 			result = append(result, trimmed)
-		// Apply complete line
 		case strings.HasPrefix(trimmed, "Apply complete!"):
 			result = append(result, trimmed)
-		// Default: keep as-is
 		default:
 			result = append(result, line)
 		}

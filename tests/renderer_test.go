@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jomakori/TF_summarize/internal"
+	"github.com/jomakori/TF_summarize/internal/render"
 )
 
 func TestRenderPlanCreate(t *testing.T) {
@@ -20,7 +21,7 @@ func TestRenderPlanCreate(t *testing.T) {
 		},
 	}
 
-	out := internal.Render(s)
+	out := render.Render(s)
 
 	assertContains(t, out, "Terraform Plan")
 	assertContains(t, out, "**3** to add")
@@ -46,7 +47,7 @@ func TestRenderPlanDestroy(t *testing.T) {
 		},
 	}
 
-	out := internal.Render(s)
+	out := render.Render(s)
 
 	assertContains(t, out, "Terraform Plan")
 	assertContains(t, out, "CAUTION")
@@ -65,7 +66,7 @@ func TestRenderApplySuccess(t *testing.T) {
 		},
 	}
 
-	out := internal.Render(s)
+	out := render.Render(s)
 
 	assertContains(t, out, "Terraform Apply")
 	assertContains(t, out, "✅ Created")
@@ -87,7 +88,7 @@ func TestRenderApplyMixed(t *testing.T) {
 		Errors: []string{"creating RDS DB Instance (mydb): DBInstanceAlreadyExists"},
 	}
 
-	out := internal.Render(s)
+	out := render.Render(s)
 
 	assertContains(t, out, "Terraform Apply")
 	assertContains(t, out, "✅ Created")
@@ -106,7 +107,7 @@ func TestRenderApplyFail(t *testing.T) {
 		Errors: []string{"creating RDS DB Instance (mydb): DBInstanceAlreadyExists"},
 	}
 
-	out := internal.Render(s)
+	out := render.Render(s)
 
 	assertContains(t, out, "Terraform Apply")
 	assertContains(t, out, "❌ Failed")
@@ -128,7 +129,7 @@ func TestRenderApplyWithDestroys(t *testing.T) {
 		},
 	}
 
-	out := internal.Render(s)
+	out := render.Render(s)
 
 	assertContains(t, out, "Terraform Apply")
 	assertContains(t, out, "✅ Destroyed")
@@ -141,7 +142,7 @@ func TestRenderNoChanges(t *testing.T) {
 		Workspace: "dev",
 	}
 
-	out := internal.Render(s)
+	out := render.Render(s)
 	assertContains(t, out, "Terraform Plan")
 	assertContains(t, out, "Infrastructure is up-to-date")
 }
@@ -174,7 +175,7 @@ Plan: 1 to add, 1 to change, 1 to destroy.`
 		RawOutput: rawOutput,
 	}
 
-	out := internal.Render(s)
+	out := render.Render(s)
 
 	// Verify output contains the raw output section
 	assertContains(t, out, "Terraform Plan Output")
@@ -208,7 +209,7 @@ Apply complete! Resources: 1 added, 0 changed, 1 destroyed.`
 		RawOutput:      rawOutput,
 	}
 
-	out := internal.Render(s)
+	out := render.Render(s)
 
 	// Verify output contains the apply output section
 	assertContains(t, out, "Terraform Apply Output")

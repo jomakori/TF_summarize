@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jomakori/TF_summarize/internal"
+	"github.com/jomakori/TF_summarize/internal/parser"
 )
 
 // assertCount is a helper to check resource counts
@@ -198,7 +199,7 @@ Terraform will perform the following actions:
 `
 
 func TestParsePlanCreate(t *testing.T) {
-	s, err := internal.Parse(planCreateOutput, internal.PhasePlan, "plat-ue2-sandbox", false)
+	s, err := parser.Parse(planCreateOutput, internal.PhasePlan, "plat-ue2-sandbox", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +218,7 @@ func TestParsePlanCreate(t *testing.T) {
 }
 
 func TestParsePlanReplace(t *testing.T) {
-	s, err := internal.Parse(planReplaceOutput, internal.PhasePlan, "plat-ue2-sandbox", false)
+	s, err := parser.Parse(planReplaceOutput, internal.PhasePlan, "plat-ue2-sandbox", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +233,7 @@ func TestParsePlanReplace(t *testing.T) {
 }
 
 func TestParseApplySuccess(t *testing.T) {
-	s, err := internal.Parse(applySuccessOutput, internal.PhaseApply, "prod", false)
+	s, err := parser.Parse(applySuccessOutput, internal.PhaseApply, "prod", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +247,7 @@ func TestParseApplySuccess(t *testing.T) {
 }
 
 func TestParseApplyMixed(t *testing.T) {
-	s, err := internal.Parse(applyMixedOutput, internal.PhaseApply, "prod", false)
+	s, err := parser.Parse(applyMixedOutput, internal.PhaseApply, "prod", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +267,7 @@ func TestParseApplyMixed(t *testing.T) {
 }
 
 func TestParseApplyFail(t *testing.T) {
-	s, err := internal.Parse(applyFailOutput, internal.PhaseApply, "prod", false)
+	s, err := parser.Parse(applyFailOutput, internal.PhaseApply, "prod", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +286,7 @@ func TestParseApplyFail(t *testing.T) {
 }
 
 func TestParseApplyDestroy(t *testing.T) {
-	s, err := internal.Parse(applyDestroyOutput, internal.PhaseApply, "staging", false)
+	s, err := parser.Parse(applyDestroyOutput, internal.PhaseApply, "staging", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +301,7 @@ func TestParseApplyDestroy(t *testing.T) {
 }
 
 func TestParseNoChanges(t *testing.T) {
-	s, err := internal.Parse(noChangesOutput, internal.PhasePlan, "dev", false)
+	s, err := parser.Parse(noChangesOutput, internal.PhasePlan, "dev", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +312,7 @@ func TestParseNoChanges(t *testing.T) {
 }
 
 func TestParseDrift(t *testing.T) {
-	s, err := internal.Parse(driftOutput, internal.PhasePlan, "staging", false)
+	s, err := parser.Parse(driftOutput, internal.PhasePlan, "staging", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +350,7 @@ func TestParseSymbolsFormat(t *testing.T) {
 Plan: 1 to add, 1 to change, 1 to destroy.
 `
 
-	s, err := internal.Parse(input, internal.PhasePlan, "test", false)
+	s, err := parser.Parse(input, internal.PhasePlan, "test", false)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -385,7 +386,7 @@ Plan: 1 to add, 1 to change, 1 to destroy.
 }
 
 func TestParsePlanCreateWithANSI(t *testing.T) {
-	s, err := internal.Parse(planCreateWithANSIOutput, internal.PhasePlan, "oci_maklab_base0", false)
+	s, err := parser.Parse(planCreateWithANSIOutput, internal.PhasePlan, "oci_maklab_base0", false)
 	if err != nil {
 		t.Fatal(err)
 	}
