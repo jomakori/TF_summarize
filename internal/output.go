@@ -12,8 +12,8 @@ import (
 
 // WriteGHASummary appends markdown to $GITHUB_STEP_SUMMARY.
 func WriteGHASummary(markdown string) error {
-	path := os.Getenv("GITHUB_STEP_SUMMARY")
-	if path == "" {
+	path, err := RequireEnv("GITHUB_STEP_SUMMARY")
+	if err != nil {
 		return fmt.Errorf("GITHUB_STEP_SUMMARY not set — are you running in GitHub Actions?")
 	}
 
@@ -31,24 +31,22 @@ func WriteGHASummary(markdown string) error {
 }
 
 // WritePRComment posts or updates a comment on the PR.
-// Requires GITHUB_TOKEN, and either GITHUB_REPOSITORY + PR number,
-// or the full event context.
 func WritePRComment(markdown string) error {
-	token := os.Getenv("GITHUB_TOKEN")
-	if token == "" {
-		return fmt.Errorf("GITHUB_TOKEN not set")
+	token, err := RequireEnv("GITHUB_TOKEN")
+	if err != nil {
+		return err
 	}
 
-	repo := os.Getenv("GITHUB_REPOSITORY") // "owner/repo"
-	prNumber := os.Getenv("PR_NUMBER")
-	if repo == "" || prNumber == "" {
+	repo, err := RequireEnv("GITHUB_REPOSITORY")
+	if err != nil {
+		return fmt.Errorf("GITHUB_REPOSITORY and PR_NUMBER must be set for PR comments")
+	}
+	prNumber, err := RequireEnv("PR_NUMBER")
+	if err != nil {
 		return fmt.Errorf("GITHUB_REPOSITORY and PR_NUMBER must be set for PR comments")
 	}
 
-	apiBase := os.Getenv("GITHUB_API_URL")
-	if apiBase == "" {
-		apiBase = "https://api.github.com"
-	}
+	apiBase := GetEnv("GITHUB_API_URL", "https://api.github.com")
 
 	// Marker to identify our comment for updates
 	marker := "<!-- tfplan-summary -->"

@@ -1,10 +1,28 @@
- package tests
+package tests
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jomakori/TF_summarize/internal"
+	"github.com/jomakori/TF_summarize/internal/parser"
 )
+
+// assertCount is a helper to check resource counts
+func assertCount(t *testing.T, actual, expected int, name string) {
+	t.Helper()
+	if actual != expected {
+		t.Errorf("expected %d %s, got %d", expected, name, actual)
+	}
+}
+
+// assertAddress is a helper to check resource address
+func assertAddress(t *testing.T, actual, expected, name string) {
+	t.Helper()
+	if actual != expected {
+		t.Errorf("expected %s address '%s', got '%s'", name, expected, actual)
+	}
+}
 
 const planCreateOutput = `
 Terraform used the selected providers to generate the following execution plan.
@@ -181,25 +199,18 @@ Terraform will perform the following actions:
 `
 
 func TestParsePlanCreate(t *testing.T) {
-	s, err := internal.Parse(planCreateOutput, internal.PhasePlan, "plat-ue2-sandbox", false)
+	s, err := parser.Parse(planCreateOutput, internal.PhasePlan, "plat-ue2-sandbox", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if s.ToAdd != 3 {
-		t.Errorf("expected 3 to add, got %d", s.ToAdd)
-	}
-	if s.ToChange != 0 {
-		t.Errorf("expected 0 to change, got %d", s.ToChange)
-	}
-	if s.ToDestroy != 0 {
-		t.Errorf("expected 0 to destroy, got %d", s.ToDestroy)
-	}
-	if len(s.Creates) != 3 {
-		t.Errorf("expected 3 create resources, got %d", len(s.Creates))
-	}
-	if s.Creates[0].Address != "module.s3_bucket.aws_s3_bucket.default[0]" {
-		t.Errorf("unexpected first create address: %s", s.Creates[0].Address)
+	assertCount(t, s.ToAdd, 3, "to add")
+	assertCount(t, s.ToChange, 0, "to change")
+	assertCount(t, s.ToDestroy, 0, "to destroy")
+	assertCount(t, len(s.Creates), 3, "create resources")
+	
+	if len(s.Creates) > 0 {
+		assertAddress(t, s.Creates[0].Address, "module.s3_bucket.aws_s3_bucket.default[0]", "first create")
 	}
 	if s.RawOutput == "" {
 		t.Error("expected RawOutput to be populated")
@@ -207,36 +218,22 @@ func TestParsePlanCreate(t *testing.T) {
 }
 
 func TestParsePlanReplace(t *testing.T) {
-	s, err := internal.Parse(planReplaceOutput, internal.PhasePlan, "plat-ue2-sandbox", false)
+	s, err := parser.Parse(planReplaceOutput, internal.PhasePlan, "plat-ue2-sandbox", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if s.ToAdd != 1 {
-		t.Errorf("expected 1 to add, got %d", s.ToAdd)
-	}
-	if s.ToChange != 1 {
-		t.Errorf("expected 1 to change, got %d", s.ToChange)
-	}
-	if s.ToDestroy != 2 {
-		t.Errorf("expected 2 to destroy, got %d", s.ToDestroy)
-	}
-	if len(s.Replaces) != 1 {
-		t.Errorf("expected 1 replace resource, got %d", len(s.Replaces))
-	}
-	if len(s.Updates) != 1 {
-		t.Errorf("expected 1 update resource, got %d", len(s.Updates))
-	}
-	if len(s.Destroys) != 1 {
-		t.Errorf("expected 1 destroy resource, got %d", len(s.Destroys))
-	}
-	if len(s.Warnings) != 1 {
-		t.Errorf("expected 1 warning, got %d", len(s.Warnings))
-	}
+	assertCount(t, s.ToAdd, 1, "to add")
+	assertCount(t, s.ToChange, 1, "to change")
+	assertCount(t, s.ToDestroy, 2, "to destroy")
+	assertCount(t, len(s.Replaces), 1, "replace resources")
+	assertCount(t, len(s.Updates), 1, "update resources")
+	assertCount(t, len(s.Destroys), 1, "destroy resources")
+	assertCount(t, len(s.Warnings), 1, "warnings")
 }
 
 func TestParseApplySuccess(t *testing.T) {
-	s, err := internal.Parse(applySuccessOutput, internal.PhaseApply, "prod", false)
+	s, err := parser.Parse(applySuccessOutput, internal.PhaseApply, "prod", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,19 +241,13 @@ func TestParseApplySuccess(t *testing.T) {
 	if !s.ApplySucceeded {
 		t.Error("expected apply to succeed")
 	}
-	if s.ToAdd != 2 {
-		t.Errorf("expected 2 added, got %d", s.ToAdd)
-	}
-	if len(s.Creates) != 2 {
-		t.Errorf("expected 2 created resources, got %d", len(s.Creates))
-	}
-	if len(s.Failures) != 0 {
-		t.Errorf("expected 0 failures, got %d", len(s.Failures))
-	}
+	assertCount(t, s.ToAdd, 2, "added")
+	assertCount(t, len(s.Creates), 2, "created resources")
+	assertCount(t, len(s.Failures), 0, "failures")
 }
 
 func TestParseApplyMixed(t *testing.T) {
-	s, err := internal.Parse(applyMixedOutput, internal.PhaseApply, "prod", false)
+	s, err := parser.Parse(applyMixedOutput, internal.PhaseApply, "prod", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,22 +255,19 @@ func TestParseApplyMixed(t *testing.T) {
 	if s.ApplySucceeded {
 		t.Error("expected apply to not fully succeed")
 	}
-	if len(s.Creates) != 1 {
-		t.Errorf("expected 1 created resource, got %d", len(s.Creates))
-	}
-	if len(s.Failures) != 1 {
-		t.Errorf("expected 1 failure, got %d", len(s.Failures))
-	}
-	if len(s.Failures) > 0 && s.Failures[0].Address != "module.rds.aws_db_instance.main" {
-		t.Errorf("expected failure for module.rds.aws_db_instance.main, got %s", s.Failures[0].Address)
-	}
-	if len(s.Failures) > 0 && s.Failures[0].Error == "" {
-		t.Error("expected failure to have error message")
+	assertCount(t, len(s.Creates), 1, "created resources")
+	assertCount(t, len(s.Failures), 1, "failures")
+	
+	if len(s.Failures) > 0 {
+		assertAddress(t, s.Failures[0].Address, "module.rds.aws_db_instance.main", "failure")
+		if s.Failures[0].Error == "" {
+			t.Error("expected failure to have error message")
+		}
 	}
 }
 
 func TestParseApplyFail(t *testing.T) {
-	s, err := internal.Parse(applyFailOutput, internal.PhaseApply, "prod", false)
+	s, err := parser.Parse(applyFailOutput, internal.PhaseApply, "prod", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,16 +278,15 @@ func TestParseApplyFail(t *testing.T) {
 	if len(s.Errors) == 0 {
 		t.Error("expected at least one error")
 	}
-	if len(s.Failures) != 1 {
-		t.Errorf("expected 1 failure, got %d", len(s.Failures))
-	}
-	if len(s.Failures) > 0 && s.Failures[0].Address != "module.rds.aws_db_instance.main" {
-		t.Errorf("expected failure address module.rds.aws_db_instance.main, got %s", s.Failures[0].Address)
+	assertCount(t, len(s.Failures), 1, "failures")
+	
+	if len(s.Failures) > 0 {
+		assertAddress(t, s.Failures[0].Address, "module.rds.aws_db_instance.main", "failure")
 	}
 }
 
 func TestParseApplyDestroy(t *testing.T) {
-	s, err := internal.Parse(applyDestroyOutput, internal.PhaseApply, "staging", false)
+	s, err := parser.Parse(applyDestroyOutput, internal.PhaseApply, "staging", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,33 +294,25 @@ func TestParseApplyDestroy(t *testing.T) {
 	if !s.ApplySucceeded {
 		t.Error("expected apply to succeed")
 	}
-	if len(s.Destroys) != 1 {
-		t.Errorf("expected 1 destroy, got %d", len(s.Destroys))
-	}
-	if len(s.Updates) != 1 {
-		t.Errorf("expected 1 update, got %d", len(s.Updates))
-	}
-	if s.ToDestroy != 1 {
-		t.Errorf("expected ToDestroy=1, got %d", s.ToDestroy)
-	}
-	if s.ToChange != 1 {
-		t.Errorf("expected ToChange=1, got %d", s.ToChange)
-	}
+	assertCount(t, len(s.Destroys), 1, "destroys")
+	assertCount(t, len(s.Updates), 1, "updates")
+	assertCount(t, s.ToDestroy, 1, "to destroy")
+	assertCount(t, s.ToChange, 1, "to change")
 }
 
 func TestParseNoChanges(t *testing.T) {
-	s, err := internal.Parse(noChangesOutput, internal.PhasePlan, "dev", false)
+	s, err := parser.Parse(noChangesOutput, internal.PhasePlan, "dev", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if s.ToAdd != 0 || s.ToChange != 0 || s.ToDestroy != 0 {
-		t.Error("expected all zeros for no changes")
-	}
+	assertCount(t, s.ToAdd, 0, "to add")
+	assertCount(t, s.ToChange, 0, "to change")
+	assertCount(t, s.ToDestroy, 0, "to destroy")
 }
 
 func TestParseDrift(t *testing.T) {
-	s, err := internal.Parse(driftOutput, internal.PhasePlan, "staging", false)
+	s, err := parser.Parse(driftOutput, internal.PhasePlan, "staging", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,35 +322,88 @@ func TestParseDrift(t *testing.T) {
 	}
 }
 
+func TestParseSymbolsFormat(t *testing.T) {
+	// Test that symbol-prefixed lines are correctly parsed as resources
+	// and that attribute values (like CIDR blocks, IPs, etc.) are not mistaken for resources
+	input := `
+  # module.vcn.oci_core_vcn.vcn will be created
+  + resource "oci_core_vcn" "vcn" ***
+      + cidr_blocks                      = [
+          + "10.0.0.0/16",
+        ]
+      + compartment_id                   = (sensitive value)
+      + display_name                     = "maklab-base0-vcn"
+    ***
+
+  # module.compute.aws_instance.web will be destroyed
+  - resource "aws_instance" "web" {
+      - private_ip = "192.168.1.10"
+    }
+
+  # module.storage.aws_s3_bucket.data will be updated
+  ~ resource "aws_s3_bucket" "data" {
+      ~ versioning {
+          ~ enabled = true
+        }
+    }
+
+Plan: 1 to add, 1 to change, 1 to destroy.
+`
+
+	s, err := parser.Parse(input, internal.PhasePlan, "test", false)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// Verify correct counts and resources
+	tests := []struct {
+		name     string
+		actual   []internal.ResourceChange
+		expected int
+		address  string
+	}{
+		{"creates", s.Creates, 1, "module.vcn.oci_core_vcn.vcn"},
+		{"destroys", s.Destroys, 1, "module.compute.aws_instance.web"},
+		{"updates", s.Updates, 1, "module.storage.aws_s3_bucket.data"},
+	}
+
+	for _, tc := range tests {
+		if len(tc.actual) != tc.expected {
+			t.Errorf("expected %d %s, got %d", tc.expected, tc.name, len(tc.actual))
+		}
+		if len(tc.actual) > 0 && tc.actual[0].Address != tc.address {
+			t.Errorf("expected %s address '%s', got '%s'", tc.name, tc.address, tc.actual[0].Address)
+		}
+	}
+
+	// Verify attribute values were not parsed as resources
+	allResources := append(append(s.Creates, s.Destroys...), s.Updates...)
+	for _, r := range allResources {
+		if strings.Contains(r.Address, "10.0.0.0") || strings.Contains(r.Address, "192.168.1.10") {
+			t.Errorf("attribute value was incorrectly parsed as resource: %s", r.Address)
+		}
+	}
+}
+
 func TestParsePlanCreateWithANSI(t *testing.T) {
-	s, err := internal.Parse(planCreateWithANSIOutput, internal.PhasePlan, "oci_maklab_base0", false)
+	s, err := parser.Parse(planCreateWithANSIOutput, internal.PhasePlan, "oci_maklab_base0", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// The plan summary line says 15 to add, but test data only has 3 resources defined
 	// This test verifies that ANSI codes are properly stripped and parsing works
-	if s.ToAdd != 15 {
-		t.Errorf("expected 15 to add (from plan summary), got %d", s.ToAdd)
-	}
-	if s.ToChange != 0 {
-		t.Errorf("expected 0 to change, got %d", s.ToChange)
-	}
-	if s.ToDestroy != 0 {
-		t.Errorf("expected 0 to destroy, got %d", s.ToDestroy)
-	}
-	// Test data only has 3 creates defined, not 15
-	if len(s.Creates) != 3 {
-		t.Errorf("expected 3 create resources in test data, got %d", len(s.Creates))
-	}
-	if len(s.Reads) != 2 {
-		t.Errorf("expected 2 read resources, got %d", len(s.Reads))
-	}
+	assertCount(t, s.ToAdd, 15, "to add (from plan summary)")
+	assertCount(t, s.ToChange, 0, "to change")
+	assertCount(t, s.ToDestroy, 0, "to destroy")
+	assertCount(t, len(s.Creates), 3, "create resources in test data")
+	assertCount(t, len(s.Reads), 2, "read resources")
+	
 	// Verify ANSI codes are stripped from addresses
-	if s.Creates[0].Address != "doppler_secret.tailscale_auth_key" {
-		t.Errorf("unexpected first create address: %s (ANSI codes not stripped?)", s.Creates[0].Address)
+	if len(s.Creates) > 0 {
+		assertAddress(t, s.Creates[0].Address, "doppler_secret.tailscale_auth_key", "first create")
 	}
-	if s.Reads[0].Address != "module.compute_instance.data.oci_core_private_ips.private_ips[0]" {
-		t.Errorf("unexpected first read address: %s (ANSI codes not stripped?)", s.Reads[0].Address)
+	if len(s.Reads) > 0 {
+		assertAddress(t, s.Reads[0].Address, "module.compute_instance.data.oci_core_private_ips.private_ips[0]", "first read")
 	}
 }
