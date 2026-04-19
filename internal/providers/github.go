@@ -110,15 +110,18 @@ func (p *GitHubProvider) ResolvePRNumber() error {
 
 // WriteSummary writes the markdown summary to GitHub Actions step summary and/or PR comment.
 func (p *GitHubProvider) WriteSummary(summary *internal.Summary, markdown string) error {
-	// Write to GitHub Actions step summary
-	if p.summaryFile != "" {
+	// GHA provider: Write to GitHub Actions step summary ONLY
+	// PR provider: Write to PR comment ONLY (never to GHA step summary)
+	if !p.requirePR && p.summaryFile != "" {
+		// This is the GHA provider - write to step summary
 		if err := internal.WriteGHASummary(markdown); err != nil {
 			return fmt.Errorf("writing GHA summary: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "✓ Written to GitHub Actions step summary")
+		return nil // GHA provider is done - it only writes to step summary
 	}
 
-	// For PR provider, resolve PR number dynamically if needed
+	// PR provider: resolve PR number dynamically and post comment
 	if p.requirePR {
 		if err := p.ResolvePRNumber(); err != nil {
 			return err

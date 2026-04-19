@@ -120,16 +120,19 @@ func run() error {
 	markdown := render.Render(summary)
 
 	// --- Output using provider pattern ---
+	// Each target does exactly what it says - no implicit behavior
 	targets := strings.Split(targetStr, ",")
+
 	for _, t := range targets {
 		t = strings.TrimSpace(t)
 		var provider internal.OutputProvider
 
 		switch t {
 		case "gha":
+			// Writes to GitHub Actions step summary only
 			provider = providers.NewGitHubProvider()
 		case "pr":
-			// Use PR provider which dynamically looks up PR number from branch
+			// Writes to PR comment only (does NOT write to GHA step summary)
 			provider = providers.NewGitHubPRProvider()
 		case "stdout":
 			provider = providers.NewStdoutProvider()

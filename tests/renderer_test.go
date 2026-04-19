@@ -224,9 +224,280 @@ Apply complete! Resources: 1 added, 0 changed, 1 destroyed.`
 	assertContains(t, out, "Apply complete!")
 }
 
+// Issue 2: Test that "No Changes" badge is NOT shown when apply-phase changes exist
+func TestNoChangesBadgeWithApplyChanges(t *testing.T) {
+	tests := []struct {
+		name           string
+		summary        *internal.Summary
+		expectNoChange bool
+	}{
+		{
+			name: "No changes badge shown when truly no changes",
+			summary: &internal.Summary{
+				Phase:     internal.PhasePlan,
+				Workspace: "test",
+				// All counts are zero, no resources
+			},
+			expectNoChange: true,
+		},
+		{
+			name: "No changes badge NOT shown when Creates exist",
+			summary: &internal.Summary{
+				Phase:     internal.PhaseApply,
+				Workspace: "test",
+				Creates: []internal.ResourceChange{
+					{Address: "aws_s3_bucket.test", Action: internal.ActionCreate, Success: true},
+				},
+			},
+			expectNoChange: false,
+		},
+		{
+			name: "No changes badge NOT shown when Destroys exist",
+			summary: &internal.Summary{
+				Phase:     internal.PhaseApply,
+				Workspace: "test",
+				Destroys: []internal.ResourceChange{
+					{Address: "aws_s3_bucket.test", Action: internal.ActionDestroy, Success: true},
+				},
+			},
+			expectNoChange: false,
+		},
+		{
+			name: "No changes badge NOT shown when Updates exist",
+			summary: &internal.Summary{
+				Phase:     internal.PhaseApply,
+				Workspace: "test",
+				Updates: []internal.ResourceChange{
+					{Address: "aws_s3_bucket.test", Action: internal.ActionUpdate, Success: true},
+				},
+			},
+			expectNoChange: false,
+		},
+		{
+			name: "No changes badge NOT shown when Failures exist",
+			summary: &internal.Summary{
+				Phase:     internal.PhaseApply,
+				Workspace: "test",
+				Failures: []internal.ResourceChange{
+					{Address: "aws_s3_bucket.test", Action: internal.ActionCreate, Error: "failed"},
+				},
+			},
+			expectNoChange: false,
+		},
+		{
+			name: "No changes badge NOT shown when ToAdd > 0",
+			summary: &internal.Summary{
+				Phase:     internal.PhasePlan,
+				Workspace: "test",
+				ToAdd:     1,
+			},
+			expectNoChange: false,
+		},
+		{
+			name: "No changes badge NOT shown when ToChange > 0",
+			summary: &internal.Summary{
+				Phase:     internal.PhasePlan,
+				Workspace: "test",
+				ToChange:  1,
+			},
+			expectNoChange: false,
+		},
+		{
+			name: "No changes badge NOT shown when ToDestroy > 0",
+			summary: &internal.Summary{
+				Phase:     internal.PhasePlan,
+				Workspace: "test",
+				ToDestroy: 1,
+			},
+			expectNoChange: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out := render.Render(tc.summary)
+			hasNoChangeBadge := strings.Contains(out, "No%20Changes") || strings.Contains(out, "No Changes")
+
+			if tc.expectNoChange && !hasNoChangeBadge {
+				t.Errorf("expected 'No Changes' badge but it was not found.\nOutput:\n%s", out)
+			}
+			if !tc.expectNoChange && hasNoChangeBadge {
+				t.Errorf("did NOT expect 'No Changes' badge but it was found.\nOutput:\n%s", out)
+			}
+		})
+	}
+}
+
+// Issue 3A: Test that failed resources use CAUTION callout for red highlighting
+func TestFailedResourcesUseCautionCallout(t *testing.T) {
+	s := &internal.Summary{
+		Phase:     internal.PhaseApply,
+		Workspace: "test",
+		Failures: []internal.ResourceChange{
+			{Address: "tailscale_tailnet_key.vm_auth_key", Action: internal.ActionCreate, Error: "Failed to create key"},
+		},
+	}
+
+	out := render.Render(s)
+
+	// Should contain the CAUTION callout for red highlighting
+	assertContains(t, out, "> [!CAUTION]")
+	assertContains(t, out, "Failed to create key")
+	assertContains(t, out, "tailscale_tailnet_key.vm_auth_key")
+}
+
+// Issue 3B: Test that error blocks in raw output are highlighted in red
+func TestErrorBlocksHighlightedInRed(t *testing.T) {
+	// Simulate Terraform error output with error block markers
+	rawOutput := `module.vcn.oci_core_vcn.vcn: Creating...
+module.vcn.oci_core_vcn.vcn: Creation complete after 1s [id=ocid1.vcn.oc1.iad.test]
+╷
+│ Error: Invalid index
+│
+│   on 1-vm.tf line 91, in module "compute_instance":
+│   91:   subnet_ocids = module.vcn.subnet_id["test-public-subnet"]
+│
+│ The given key does not identify an element in this collection value.
+╵
+╷
+│ Error: Failed to create key
+│
+│   with tailscale_tailnet_key.vm_auth_key,
+│   on 1-vm.tf line 108, in resource "tailscale_tailnet_key" "vm_auth_key":
+│  108: resource "tailscale_tailnet_key" "vm_auth_key" {
+│
+│ API token invalid (401)
+╵`
+
+	s := &internal.Summary{
+		Phase:     internal.PhaseApply,
+		Workspace: "test",
+		RawOutput: rawOutput,
+		Failures: []internal.ResourceChange{
+			{Address: "tailscale_tailnet_key.vm_auth_key", Action: internal.ActionCreate, Error: "Failed to create key"},
+		},
+	}
+
+	out := render.Render(s)
+
+	// Error block start marker should be prefixed with - for red highlighting
+	assertContains(t, out, "- ╷")
+	// Error block end marker should be prefixed with - for red highlighting
+	assertContains(t, out, "- ╵")
+	// Lines inside error block should be prefixed with - for red highlighting
+	assertContains(t, out, "- │ Error:")
+}
+
 func assertContains(t *testing.T, haystack, needle string) {
 	t.Helper()
 	if !strings.Contains(haystack, needle) {
 		t.Errorf("expected output to contain %q, but it didn't.\nOutput:\n%s", needle, haystack)
 	}
+}
+
+func assertNotContains(t *testing.T, haystack, needle string) {
+	t.Helper()
+	if strings.Contains(haystack, needle) {
+		t.Errorf("expected output to NOT contain %q, but it did.\nOutput:\n%s", needle, haystack)
+	}
+}
+
+// Test comprehensive error highlighting with realistic Terraform apply output
+func TestErrorHighlightingWithRealOutput(t *testing.T) {
+	// Simulates a Terraform apply with multiple resources created successfully
+	// and two different types of errors:
+	// 1. Configuration error (Invalid index) - no specific resource
+	// 2. Resource creation error (API failure) - with specific resource
+	rawOutput := `+ provider_api_key.auth_key: Creating...
++ module.network.provider_vpc.main: Creating...
++ module.network.provider_vpc.main: Creation complete after 1s [id=vpc-abc123]
+module.network.module.subnet[0].data.provider_dhcp_options.options: Reading...
++ module.network.provider_security_list.default[0]: Creating...
++ module.network.provider_internet_gateway.main[0]: Creating...
++ provider_security_list.public: Creating...
+module.network.module.subnet[0].data.provider_dhcp_options.options: Read complete after 0s [id=dhcp-123]
++ module.network.provider_security_list.default[0]: Creation complete after 0s [id=seclist-abc]
++ provider_security_list.public: Creation complete after 0s [id=seclist-def]
+module.compute.data.provider_policies.backup: Reading...
+module.compute.data.provider_availability_domains.ad: Reading...
++ module.network.provider_internet_gateway.main[0]: Creation complete after 1s [id=igw-abc]
++ module.network.provider_route_table.main[0]: Creating...
+module.compute.data.provider_policies.backup: Read complete after 1s [id=policy-0]
+module.compute.data.provider_availability_domains.ad: Read complete after 1s [id=ad-123]
+module.compute.data.provider_shapes.current: Reading...
++ module.network.provider_route_table.main[0]: Creation complete after 0s [id=rt-abc]
++ module.network.module.subnet[0].provider_subnet.main["public"]: Creating...
+module.compute.data.provider_shapes.current: Read complete after 0s [id=shapes-123]
++ module.network.module.subnet[0].provider_subnet.main["public"]: Creation complete after 2s [id=subnet-abc]
+╷
+│ Error: Invalid index
+│
+│   on main.tf line 91, in module "compute":
+│   91:   subnet_ids = module.network.subnet_id["nonexistent-subnet"]
+│     ├────────────────
+│     │ module.network.subnet_id is object with 1 attribute "public"
+│     │ var.name is "my-project"
+│
+│ The given key does not identify an element in this collection value.
+╵
+╷
+│ Error: Failed to create resource
+│
+│   with provider_api_key.auth_key,
+│   on main.tf line 108, in resource "provider_api_key" "auth_key":
+│  108: resource "provider_api_key" "auth_key" {
+│
+│ API token invalid (401)
+╵
+::error::Terraform exited with code 1`
+
+	s := &internal.Summary{
+		Phase:     internal.PhaseApply,
+		Workspace: "test",
+		RawOutput: rawOutput,
+		Creates: []internal.ResourceChange{
+			{Address: "module.network.provider_vpc.main", Action: internal.ActionCreate, Success: true},
+			{Address: "module.network.provider_security_list.default[0]", Action: internal.ActionCreate, Success: true},
+			{Address: "provider_security_list.public", Action: internal.ActionCreate, Success: true},
+			{Address: "module.network.provider_internet_gateway.main[0]", Action: internal.ActionCreate, Success: true},
+			{Address: "module.network.provider_route_table.main[0]", Action: internal.ActionCreate, Success: true},
+			{Address: "module.network.module.subnet[0].provider_subnet.main[\"public\"]", Action: internal.ActionCreate, Success: true},
+		},
+		Failures: []internal.ResourceChange{
+			{Address: "provider_api_key.auth_key", Action: internal.ActionCreate, Error: "Failed to create resource"},
+		},
+	}
+
+	out := render.Render(s)
+
+	// Test 1: Error block start markers should be highlighted in red (prefixed with -)
+	assertContains(t, out, "- ╷")
+
+	// Test 2: Error block end markers should be highlighted in red (prefixed with -)
+	assertContains(t, out, "- ╵")
+
+	// Test 3: Error lines inside blocks should be highlighted in red
+	assertContains(t, out, "- │ Error: Invalid index")
+	assertContains(t, out, "- │ Error: Failed to create resource")
+
+	// Test 4: Lines inside error blocks should be highlighted in red
+	assertContains(t, out, "- │   on main.tf line 91")
+	assertContains(t, out, "- │ API token invalid (401)")
+
+	// Test 5: Failed resources section should use CAUTION callout
+	assertContains(t, out, "> [!CAUTION]")
+	assertContains(t, out, "provider_api_key.auth_key")
+
+	// Test 6: No Changes badge should NOT appear (we have creates and failures)
+	assertNotContains(t, out, "No%20Changes")
+
+	// Test 7: Failed badge should appear
+	assertContains(t, out, "Failed")
+
+	// Test 8: Creation lines should be highlighted in green (prefixed with +)
+	assertContains(t, out, "+ module.network.provider_vpc.main: Creating...")
+	assertContains(t, out, "+ module.network.provider_vpc.main: Creation complete")
+
+	// Print the output for visual inspection
+	t.Logf("Rendered output:\n%s", out)
 }

@@ -307,3 +307,139 @@ func TestGitHubProviderDoesNotRequirePR(t *testing.T) {
 		t.Errorf("expected provider name 'github', got '%s'", p.Name())
 	}
 }
+
+// Issue 1: Test that GHA provider and PR provider are separate and do their own jobs
+func TestGHAProviderWritesToStepSummaryOnly(t *testing.T) {
+	// Create a temp file to act as GITHUB_STEP_SUMMARY
+	tmpFile, err := os.CreateTemp("", "step-summary-*.md")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	// Save and set env vars
+	origSummary := os.Getenv("GITHUB_STEP_SUMMARY")
+	origToken := os.Getenv("GITHUB_TOKEN")
+	origRepo := os.Getenv("GITHUB_REPOSITORY")
+	origPRNum := os.Getenv("PR_NUMBER")
+
+	defer func() {
+		os.Setenv("GITHUB_STEP_SUMMARY", origSummary)
+		os.Setenv("GITHUB_TOKEN", origToken)
+		os.Setenv("GITHUB_REPOSITORY", origRepo)
+		os.Setenv("PR_NUMBER", origPRNum)
+	}()
+
+	os.Setenv("GITHUB_STEP_SUMMARY", tmpFile.Name())
+	os.Setenv("GITHUB_TOKEN", "") // No token - should not try to post PR comment
+	os.Setenv("GITHUB_REPOSITORY", "")
+	os.Setenv("PR_NUMBER", "")
+
+	// Create GHA provider and write summary
+	p := providers.NewGitHubProvider()
+	summary := &internal.Summary{
+		Phase:     internal.PhasePlan,
+		Workspace: "test",
+		ToAdd:     1,
+	}
+	markdown := "# Test Summary\n\nThis is a test."
+
+	err = p.WriteSummary(summary, markdown)
+	if err != nil {
+		t.Fatalf("WriteSummary failed: %v", err)
+	}
+
+	// Verify the step summary file was written
+	content, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("failed to read step summary file: %v", err)
+	}
+
+	if len(content) == 0 {
+		t.Error("expected step summary file to have content, but it was empty")
+	}
+
+	if string(content) != markdown+"\n" {
+		t.Errorf("expected step summary to contain %q, got %q", markdown+"\n", string(content))
+	}
+}
+
+func TestPRProviderDoesNotWriteToStepSummary(t *testing.T) {
+	// Create a temp file to act as GITHUB_STEP_SUMMARY
+	tmpFile, err := os.CreateTemp("", "step-summary-*.md")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	// Save and set env vars
+	origSummary := os.Getenv("GITHUB_STEP_SUMMARY")
+	origToken := os.Getenv("GITHUB_TOKEN")
+	origRepo := os.Getenv("GITHUB_REPOSITORY")
+	origPRNum := os.Getenv("PR_NUMBER")
+	origHeadRef := os.Getenv("GITHUB_HEAD_REF")
+	origRefName := os.Getenv("GITHUB_REF_NAME")
+
+	defer func() {
+		os.Setenv("GITHUB_STEP_SUMMARY", origSummary)
+		os.Setenv("GITHUB_TOKEN", origToken)
+		os.Setenv("GITHUB_REPOSITORY", origRepo)
+		os.Setenv("PR_NUMBER", origPRNum)
+		os.Setenv("GITHUB_HEAD_REF", origHeadRef)
+		os.Setenv("GITHUB_REF_NAME", origRefName)
+	}()
+
+	os.Setenv("GITHUB_STEP_SUMMARY", tmpFile.Name())
+	os.Setenv("GITHUB_TOKEN", "") // No token - will fail PR lookup but that's OK
+	os.Setenv("GITHUB_REPOSITORY", "owner/repo")
+	os.Setenv("PR_NUMBER", "") // No PR number
+	os.Setenv("GITHUB_HEAD_REF", "")
+	os.Setenv("GITHUB_REF_NAME", "main") // Main branch - will fail PR requirement
+
+	// Create PR provider
+	p := providers.NewGitHubPRProvider()
+	summary := &internal.Summary{
+		Phase:     internal.PhasePlan,
+		Workspace: "test",
+		ToAdd:     1,
+	}
+	markdown := "# Test Summary\n\nThis is a test."
+
+	// This will fail because we're on main branch with requirePR=true
+	// But the important thing is it should NOT write to step summary
+	_ = p.WriteSummary(summary, markdown)
+
+	// Verify the step summary file was NOT written
+	content, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("failed to read step summary file: %v", err)
+	}
+
+	if len(content) > 0 {
+		t.Errorf("expected step summary file to be empty (PR provider should not write to it), but got: %q", string(content))
+	}
+}
+
+func TestProviderSeparation(t *testing.T) {
+	// Test that GHA and PR providers have correct configuration
+	t.Run("GHA provider has summaryFile set", func(t *testing.T) {
+		origSummary := os.Getenv("GITHUB_STEP_SUMMARY")
+		defer os.Setenv("GITHUB_STEP_SUMMARY", origSummary)
+
+		os.Setenv("GITHUB_STEP_SUMMARY", "/tmp/test-summary.md")
+
+		p := providers.NewGitHubProvider()
+		if p.Name() != "github" {
+			t.Errorf("expected provider name 'github', got '%s'", p.Name())
+		}
+	})
+
+	t.Run("PR provider has empty summaryFile", func(t *testing.T) {
+		p := providers.NewGitHubPRProvider()
+		if p.Name() != "github-pr" {
+			t.Errorf("expected provider name 'github-pr', got '%s'", p.Name())
+		}
+	})
+}

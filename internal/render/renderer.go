@@ -123,7 +123,8 @@ func writeBadges(b *strings.Builder, s *internal.Summary) {
 		badges = append(badges, internal.CreateShieldsIOBadge("", msg, internal.ColorImport))
 	}
 
-	if s.ToAdd == 0 && s.ToChange == 0 && s.ToDestroy == 0 && s.ToImport == 0 && len(s.Replaces) == 0 {
+	if s.ToAdd == 0 && s.ToChange == 0 && s.ToDestroy == 0 && s.ToImport == 0 && len(s.Replaces) == 0 &&
+		len(s.Creates) == 0 && len(s.Destroys) == 0 && len(s.Updates) == 0 && len(s.Failures) == 0 {
 		badges = append(badges, internal.CreateShieldsIOBadge("", "No Changes", internal.ColorNoChanges))
 	}
 
@@ -247,6 +248,7 @@ func writeApplyResourceSections(b *strings.Builder, s *internal.Summary) {
 		for _, r := range s.Failures {
 			b.WriteString(fmt.Sprintf("**`%s`**\n", r.Address))
 			if r.Error != "" {
+				b.WriteString("> [!CAUTION]\n")
 				b.WriteString(fmt.Sprintf("> %s\n", r.Error))
 			}
 			b.WriteString("\n")
@@ -307,9 +309,28 @@ func writeRawOutput(b *strings.Builder, s *internal.Summary) {
 func colorizeOutput(output string, phase internal.Phase) string {
 	lines := strings.Split(output, "\n")
 	var result []string
+	inErrorBlock := false
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
+
+		// Detect Terraform error block boundaries (╷ starts, ╵ ends)
+		if strings.HasPrefix(trimmed, "╷") {
+			inErrorBlock = true
+			result = append(result, fmt.Sprintf("- %s", line))
+			continue
+		}
+		if strings.HasPrefix(trimmed, "╵") {
+			inErrorBlock = false
+			result = append(result, fmt.Sprintf("- %s", line))
+			continue
+		}
+
+		// If inside an error block, highlight all lines in red
+		if inErrorBlock {
+			result = append(result, fmt.Sprintf("- %s", line))
+			continue
+		}
 
 		switch {
 		case strings.HasPrefix(trimmed, "+ "):
