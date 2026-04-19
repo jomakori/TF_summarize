@@ -1,16 +1,8 @@
 ## 📚 Description
 <!--- Please include a summary of the change and link any issue it fixes. -->
-<<<<<<< HEAD
 
 ## 🔧 Motivation
 <!--- Why is this change needed? What problem does it solve? -->
-=======
-- 
-
-## 🔧 Motivation
-<!--- Why is this change needed? What problem does it solve? -->
-- 
->>>>>>> main
 
 ## ✅ Checklist
 <!--- Put an `x` in all the boxes that apply. -->
