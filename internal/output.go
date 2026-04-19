@@ -158,6 +158,86 @@ func patchComment(url, token, body string) error {
 	return nil
 }
 
+// FindPRForBranch looks up the PR number for a given branch using the GitHub API.
+// It returns the PR number if found, or 0 if no PR exists for the branch.
+func FindPRForBranch(branch string) (int, error) {
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		return 0, fmt.Errorf("GITHUB_TOKEN not set")
+	}
+
+	repo := os.Getenv("GITHUB_REPOSITORY")
+	if repo == "" {
+		return 0, fmt.Errorf("GITHUB_REPOSITORY not set")
+	}
+
+	apiBase := GetEnv("GITHUB_API_URL", "https://api.github.com")
+
+	// GitHub API: GET /repos/{owner}/{repo}/pulls?head={owner}:{branch}&state=open
+	// Extract owner from repo (format: owner/repo)
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid GITHUB_REPOSITORY format: %s", repo)
+	}
+	owner := parts[0]
+
+	// URL encode the head parameter
+	head := fmt.Sprintf("%s:%s", owner, branch)
+	url := fmt.Sprintf("%s/repos/%s/pulls?head=%s&state=open", apiBase, repo, head)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("fetching PRs: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("GitHub API error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var prs []struct {
+		Number int `json:"number"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&prs); err != nil {
+		return 0, fmt.Errorf("decoding response: %w", err)
+	}
+
+	if len(prs) == 0 {
+		return 0, nil // No PR found for this branch
+	}
+
+	return prs[0].Number, nil
+}
+
+// GetCurrentBranch returns the current branch name from GitHub Actions environment.
+func GetCurrentBranch() string {
+	// For pull_request events, GITHUB_HEAD_REF contains the branch name
+	if branch := os.Getenv("GITHUB_HEAD_REF"); branch != "" {
+		return branch
+	}
+
+	// For push/workflow_dispatch events, GITHUB_REF_NAME contains the branch name
+	if branch := os.Getenv("GITHUB_REF_NAME"); branch != "" {
+		return branch
+	}
+
+	// Fallback: parse from GITHUB_REF (refs/heads/branch-name)
+	ref := os.Getenv("GITHUB_REF")
+	if strings.HasPrefix(ref, "refs/heads/") {
+		return strings.TrimPrefix(ref, "refs/heads/")
+	}
+
+	return ""
+}
+
 // WriteStdout prints the markdown to stdout.
 func WriteStdout(markdown string) {
 	fmt.Println(markdown)

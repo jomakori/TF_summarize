@@ -308,6 +308,8 @@ go install github.com/jomakori/TF_summarize@latest
 tf-summarize --version
 ```
 
+<<<<<<< HEAD
+=======
 ## Architecture Enhancements (v2.0)
 
 ### JSON Plan Parsing
@@ -333,6 +335,7 @@ tf-summarize --version
 - `ResourceChange` now includes timestamps and extensible details map
 - `Summary` tracks execution errors and parsing source (JSON vs text)
 - `RenderOutput` struct for structured rendering results
+>>>>>>> main
 
 ## Test
 
