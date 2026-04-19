@@ -165,7 +165,11 @@ func writeErrors(b *strings.Builder, s *internal.Summary) {
 		return
 	}
 	for _, e := range s.Errors {
-		b.WriteString(fmt.Sprintf("> [!CAUTION]\n> **Error:** %s\n\n", e))
+		// Skip generic exit code messages - they're too generic and redundant
+		if strings.Contains(e, "exited with code") {
+			continue
+		}
+		b.WriteString(fmt.Sprintf("> [!ERROR]\n> **Error:** %s\n\n", e))
 	}
 }
 
@@ -248,7 +252,7 @@ func writeApplyResourceSections(b *strings.Builder, s *internal.Summary) {
 		for _, r := range s.Failures {
 			b.WriteString(fmt.Sprintf("**`%s`**\n", r.Address))
 			if r.Error != "" {
-				b.WriteString("> [!CAUTION]\n")
+				b.WriteString("> [!ERROR]\n")
 				b.WriteString(fmt.Sprintf("> %s\n", r.Error))
 			}
 			b.WriteString("\n")

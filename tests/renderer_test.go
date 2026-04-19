@@ -328,22 +328,45 @@ func TestNoChangesBadgeWithApplyChanges(t *testing.T) {
 	}
 }
 
-// Issue 3A: Test that failed resources use CAUTION callout for red highlighting
-func TestFailedResourcesUseCautionCallout(t *testing.T) {
+// Issue 3A: Test that failed resources use ERROR callout for red highlighting
+func TestFailedResourcesUseErrorCallout(t *testing.T) {
 	s := &internal.Summary{
 		Phase:     internal.PhaseApply,
 		Workspace: "test",
 		Failures: []internal.ResourceChange{
-			{Address: "tailscale_tailnet_key.vm_auth_key", Action: internal.ActionCreate, Error: "Failed to create key"},
+			{Address: "provider_api_key.auth_key", Action: internal.ActionCreate, Error: "Failed to create key"},
 		},
 	}
 
 	out := render.Render(s)
 
-	// Should contain the CAUTION callout for red highlighting
-	assertContains(t, out, "> [!CAUTION]")
+	// Should contain the ERROR callout for red highlighting (not CAUTION - that's for warnings)
+	assertContains(t, out, "> [!ERROR]")
 	assertContains(t, out, "Failed to create key")
-	assertContains(t, out, "tailscale_tailnet_key.vm_auth_key")
+	assertContains(t, out, "provider_api_key.auth_key")
+}
+
+// Test that generic exit code messages are filtered out from error display
+func TestGenericExitCodeMessagesFiltered(t *testing.T) {
+	s := &internal.Summary{
+		Phase:     internal.PhasePlan,
+		Workspace: "test",
+		Errors: []string{
+			"provider credentials are empty - set api_key",
+			"Terraform exited with code 1.",
+			"Terraform exited with code 2",
+		},
+	}
+
+	out := render.Render(s)
+
+	// Real errors should be displayed with ERROR callout
+	assertContains(t, out, "> [!ERROR]")
+	assertContains(t, out, "provider credentials are empty")
+
+	// Generic exit code messages should be filtered out
+	assertNotContains(t, out, "exited with code 1")
+	assertNotContains(t, out, "exited with code 2")
 }
 
 // Issue 3B: Test that error blocks in raw output are highlighted in red
@@ -484,8 +507,8 @@ module.compute.data.provider_shapes.current: Read complete after 0s [id=shapes-1
 	assertContains(t, out, "- │   on main.tf line 91")
 	assertContains(t, out, "- │ API token invalid (401)")
 
-	// Test 5: Failed resources section should use CAUTION callout
-	assertContains(t, out, "> [!CAUTION]")
+	// Test 5: Failed resources section should use ERROR callout (not CAUTION - that's for warnings)
+	assertContains(t, out, "> [!ERROR]")
 	assertContains(t, out, "provider_api_key.auth_key")
 
 	// Test 6: No Changes badge should NOT appear (we have creates and failures)
