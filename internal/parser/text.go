@@ -24,7 +24,8 @@ var (
 	applyCreatingRe   = regexp.MustCompile(`^(\S+):\s+Creating\.\.\.`)
 	applyModifyingRe  = regexp.MustCompile(`^(\S+):\s+Modifying\.\.\.`)
 	applyDestroyingRe = regexp.MustCompile(`^(\S+):\s+Destroying\.\.\.`)
-	applyErrorRe      = regexp.MustCompile(`^Error:\s+(.+)`)
+	// Match both standard "Error: msg" and box format "│ Error: msg"
+	applyErrorRe      = regexp.MustCompile(`(?:^│\s*)?Error:\s+(.+)`)
 	applyResultRe     = regexp.MustCompile(`Apply complete!\s+Resources:\s+(\d+)\s+added,\s+(\d+)\s+changed,\s+(\d+)\s+destroyed`)
 	errorResourceRe   = regexp.MustCompile(`with\s+(\S+),`)
 	driftRe           = regexp.MustCompile(`drift|Objects have changed outside of Terraform`)

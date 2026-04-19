@@ -4,9 +4,6 @@ A small Go CLI that parses Terraform `plan` and `apply` output and produces a
 beautified Markdown summary — suitable for GitHub Actions step summaries or
 PR comments.
 
-**New in v2.0**: Structured JSON plan parsing for accurate resource change detection,
-provider abstraction for extensible output handling, and modular rendering functions.
-
 ## Usage
 
 ### Text Output Parsing (Default)
@@ -308,31 +305,6 @@ go install github.com/jomakori/TF_summarize@latest
 tf-summarize --version
 ```
 
-## Architecture Enhancements (v2.0)
-
-### JSON Plan Parsing
-- Structured parsing of `terraform show -json` output for accurate resource change detection
-- Fallback to text parsing for backward compatibility
-- Handles all resource actions: create, update, delete, replace, read, import
-
-### Provider Abstraction
-- Pluggable output providers for extensibility
-- Built-in providers: `stdout`, `github` (GHA + PR comments)
-- Easy to add custom providers by implementing the `OutputProvider` interface
-
-### Modular Rendering
-- Split rendering into focused functions:
-  - `RenderSummary()` — header, badges, counts
-  - `RenderDetails()` — resource lists
-  - `RenderOutputs()` — terraform outputs
-  - `RenderRawOutput()` — full terraform output
-  - `RenderFull()` — all sections separately
-- Enables flexible output composition
-
-### Enhanced Types
-- `ResourceChange` now includes timestamps and extensible details map
-- `Summary` tracks execution errors and parsing source (JSON vs text)
-- `RenderOutput` struct for structured rendering results
 
 ## Test
 

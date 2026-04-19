@@ -60,8 +60,26 @@ func run() error {
 	var summary *internal.Summary
 	var err error
 
-	// Try JSON plan first if available
-	if jsonPlanFile != "" {
+	// For apply phase, always read from stdin to capture actual apply output
+	// JSON plan is only useful for plan phase (pre-apply analysis)
+	if phase == internal.PhaseApply {
+		// Read from stdin for apply output
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("reading stdin: %w", err)
+		}
+		input = string(data)
+
+		if strings.TrimSpace(input) == "" {
+			return fmt.Errorf("no terraform apply output received — terraform may have failed before producing output")
+		}
+
+		summary, err = parser.Parse(input, phase, workspace, isDestroyPlan)
+		if err != nil {
+			return fmt.Errorf("parsing terraform output: %w", err)
+		}
+	} else if jsonPlanFile != "" {
+		// For plan phase, try JSON plan first if available
 		data, err := os.ReadFile(jsonPlanFile)
 		if err != nil {
 			return fmt.Errorf("reading JSON plan file %s: %w", jsonPlanFile, err)
@@ -72,7 +90,7 @@ func run() error {
 		}
 		summary.Phase = phase
 	} else {
-		// Fall back to text parsing
+		// Fall back to text parsing for plan phase
 		if inputFile != "" {
 			data, err := os.ReadFile(inputFile)
 			if err != nil {
@@ -111,7 +129,8 @@ func run() error {
 		case "gha":
 			provider = providers.NewGitHubProvider()
 		case "pr":
-			provider = providers.NewGitHubProvider()
+			// Use PR provider which dynamically looks up PR number from branch
+			provider = providers.NewGitHubPRProvider()
 		case "stdout":
 			provider = providers.NewStdoutProvider()
 		default:
@@ -121,6 +140,11 @@ func run() error {
 		if err := provider.WriteSummary(summary, markdown); err != nil {
 			return fmt.Errorf("writing output via %s provider: %w", provider.Name(), err)
 		}
+	}
+
+	// Exit with error code if terraform errors were detected
+	if len(summary.Errors) > 0 || len(summary.Failures) > 0 {
+		os.Exit(1) // signal terraform error
 	}
 
 	// Set exit code based on changes (useful for CI)
