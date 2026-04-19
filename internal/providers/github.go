@@ -33,10 +33,11 @@ func NewGitHubProvider() *GitHubProvider {
 
 // NewGitHubPRProvider creates a new GitHub provider specifically for PR comments.
 // It will attempt to find the PR number dynamically if not provided.
+// Note: This provider does NOT write to GHA step summary - use "gha" target for that.
 func NewGitHubPRProvider() *GitHubProvider {
 	p := &GitHubProvider{
 		BaseProvider: NewBaseProvider("github-pr"),
-		summaryFile:  os.Getenv("GITHUB_STEP_SUMMARY"),
+		summaryFile:  "", // PR provider does NOT write to step summary (gha provider does that)
 		token:        os.Getenv("GITHUB_TOKEN"),
 		repo:         os.Getenv("GITHUB_REPOSITORY"),
 		apiURL:       getEnvOrDefault("GITHUB_API_URL", "https://api.github.com"),

@@ -24,8 +24,11 @@ var (
 	applyCreatingRe   = regexp.MustCompile(`^(\S+):\s+Creating\.\.\.`)
 	applyModifyingRe  = regexp.MustCompile(`^(\S+):\s+Modifying\.\.\.`)
 	applyDestroyingRe = regexp.MustCompile(`^(\S+):\s+Destroying\.\.\.`)
-	// Match both standard "Error: msg" and box format "│ Error: msg"
-	applyErrorRe      = regexp.MustCompile(`(?:^│\s*)?Error:\s+(.+)`)
+	// Match multiple error formats:
+	// - Standard: "Error: msg"
+	// - Box format: "│ Error: msg"
+	// - GitHub Actions annotation: "::error::msg"
+	applyErrorRe      = regexp.MustCompile(`(?:^│\s*)?Error:\s+(.+)|^::error::(.+)`)
 	applyResultRe     = regexp.MustCompile(`Apply complete!\s+Resources:\s+(\d+)\s+added,\s+(\d+)\s+changed,\s+(\d+)\s+destroyed`)
 	errorResourceRe   = regexp.MustCompile(`with\s+(\S+),`)
 	driftRe           = regexp.MustCompile(`drift|Objects have changed outside of Terraform`)
@@ -62,10 +65,19 @@ func Parse(input string, phase internal.Phase, workspace string, isDestroyPlan b
 		}
 
 		if m := applyErrorRe.FindStringSubmatch(line); len(m) > 1 {
-			lastError = strings.TrimSpace(m[1])
-			s.Errors = append(s.Errors, lastError)
-			if s.ApplyError == "" {
-				s.ApplyError = lastError
+			// Handle multiple capture groups - use first non-empty match
+			var errMsg string
+			if m[1] != "" {
+				errMsg = strings.TrimSpace(m[1])
+			} else if len(m) > 2 && m[2] != "" {
+				errMsg = strings.TrimSpace(m[2])
+			}
+			if errMsg != "" {
+				lastError = errMsg
+				s.Errors = append(s.Errors, lastError)
+				if s.ApplyError == "" {
+					s.ApplyError = lastError
+				}
 			}
 		}
 

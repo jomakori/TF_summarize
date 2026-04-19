@@ -485,3 +485,27 @@ func TestParseInvalidFlagError(t *testing.T) {
 		t.Error("expected ApplySucceeded to be false when invalid flag error detected")
 	}
 }
+
+// Test for GitHub Actions error annotation format
+const ghaErrorAnnotationOutput = `
+::error::Terraform exited with code 1.
+`
+
+func TestParseGHAErrorAnnotation(t *testing.T) {
+	s, err := parser.Parse(ghaErrorAnnotationOutput, internal.PhaseApply, "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Errors) == 0 {
+		t.Error("expected GHA error annotation to be detected")
+	}
+
+	if len(s.Errors) > 0 && !strings.Contains(s.Errors[0], "Terraform exited with code 1") {
+		t.Errorf("expected error message to contain 'Terraform exited with code 1', got: %s", s.Errors[0])
+	}
+
+	if s.ApplySucceeded {
+		t.Error("expected ApplySucceeded to be false when GHA error annotation detected")
+	}
+}

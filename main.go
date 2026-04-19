@@ -144,6 +144,7 @@ func run() error {
 
 	// Exit with error code if terraform errors were detected
 	if len(summary.Errors) > 0 || len(summary.Failures) > 0 {
+		fmt.Fprintf(os.Stderr, "⚠ Terraform errors detected (%d errors, %d failures) - exiting with code 1\n", len(summary.Errors), len(summary.Failures))
 		os.Exit(1) // signal terraform error
 	}
 
