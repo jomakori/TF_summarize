@@ -369,25 +369,67 @@ func TestGenericExitCodeMessagesFiltered(t *testing.T) {
 	assertNotContains(t, out, "exited with code 2")
 }
 
+// Test that errors use [!ERROR] callout, NOT [!CAUTION]
+func TestErrorsUseErrorCalloutNotCaution(t *testing.T) {
+	s := &internal.Summary{
+		Phase:     internal.PhasePlan,
+		Workspace: "test",
+		ToAdd:     6,
+		Errors: []string{
+			"Unable to determine network device. Exiting.",
+			"Tailscale installation script failed. Retry attempt 1",
+			"Tailscale installation could not be verified. Retry attempt 1",
+		},
+		Creates: []internal.ResourceChange{
+			{Address: "provider_secret.auth_key", Action: internal.ActionCreate},
+			{Address: "provider_api_key.vm_auth_key", Action: internal.ActionCreate},
+		},
+	}
+
+	out := render.Render(s)
+
+	// Errors should use [!ERROR] callout
+	assertContains(t, out, "> [!ERROR]")
+	assertContains(t, out, "Unable to determine network device")
+	assertContains(t, out, "Tailscale installation script failed")
+	assertContains(t, out, "Tailscale installation could not be verified")
+
+	// Count occurrences of [!ERROR] - should be 3 (one for each error)
+	errorCount := strings.Count(out, "> [!ERROR]")
+	if errorCount != 3 {
+		t.Errorf("expected 3 [!ERROR] callouts, got %d", errorCount)
+	}
+
+	// [!CAUTION] should NOT be used for errors (only for warnings like "will delete resources")
+	// Since we have no destroys, there should be no [!CAUTION]
+	cautionCount := strings.Count(out, "> [!CAUTION]")
+	if cautionCount != 0 {
+		t.Errorf("expected 0 [!CAUTION] callouts for errors, got %d.\nOutput:\n%s", cautionCount, out)
+	}
+
+	// Print output for visual inspection
+	t.Logf("Rendered output:\n%s", out)
+}
+
 // Issue 3B: Test that error blocks in raw output are highlighted in red
 func TestErrorBlocksHighlightedInRed(t *testing.T) {
 	// Simulate Terraform error output with error block markers
-	rawOutput := `module.vcn.oci_core_vcn.vcn: Creating...
-module.vcn.oci_core_vcn.vcn: Creation complete after 1s [id=ocid1.vcn.oc1.iad.test]
+	rawOutput := `module.network.provider_vpc.main: Creating...
+module.network.provider_vpc.main: Creation complete after 1s [id=vpc-test123]
 ╷
 │ Error: Invalid index
 │
-│   on 1-vm.tf line 91, in module "compute_instance":
-│   91:   subnet_ocids = module.vcn.subnet_id["test-public-subnet"]
+│   on main.tf line 91, in module "compute":
+│   91:   subnet_ids = module.network.subnet_id["nonexistent-subnet"]
 │
 │ The given key does not identify an element in this collection value.
 ╵
 ╷
-│ Error: Failed to create key
+│ Error: Failed to create resource
 │
-│   with tailscale_tailnet_key.vm_auth_key,
-│   on 1-vm.tf line 108, in resource "tailscale_tailnet_key" "vm_auth_key":
-│  108: resource "tailscale_tailnet_key" "vm_auth_key" {
+│   with provider_api_key.auth_key,
+│   on main.tf line 108, in resource "provider_api_key" "auth_key":
+│  108: resource "provider_api_key" "auth_key" {
 │
 │ API token invalid (401)
 ╵`
@@ -397,7 +439,7 @@ module.vcn.oci_core_vcn.vcn: Creation complete after 1s [id=ocid1.vcn.oc1.iad.te
 		Workspace: "test",
 		RawOutput: rawOutput,
 		Failures: []internal.ResourceChange{
-			{Address: "tailscale_tailnet_key.vm_auth_key", Action: internal.ActionCreate, Error: "Failed to create key"},
+			{Address: "provider_api_key.auth_key", Action: internal.ActionCreate, Error: "Failed to create resource"},
 		},
 	}
 
@@ -523,4 +565,55 @@ module.compute.data.provider_shapes.current: Read complete after 0s [id=shapes-1
 
 	// Print the output for visual inspection
 	t.Logf("Rendered output:\n%s", out)
+}
+
+// Test that Terraform outputs are rendered in a separate section
+func TestOutputsSection(t *testing.T) {
+	s := &internal.Summary{
+		Phase:     internal.PhasePlan,
+		Workspace: "test",
+		ToAdd:     2,
+		Creates: []internal.ResourceChange{
+			{Address: "aws_instance.web", Action: internal.ActionCreate},
+			{Address: "aws_s3_bucket.data", Action: internal.ActionCreate},
+		},
+		Outputs: []internal.OutputChange{
+			{Name: "instance_id", Action: internal.ActionCreate, Value: "(known after apply)"},
+			{Name: "public_ip", Action: internal.ActionCreate, Value: "(known after apply)"},
+			{Name: "bucket_name", Action: internal.ActionCreate, Value: "my-bucket"},
+			{Name: "old_output", Action: internal.ActionDestroy, Value: "old-value"},
+		},
+	}
+
+	out := render.Render(s)
+
+	// Should have an Outputs section
+	assertContains(t, out, "<summary><b>Outputs</b> (4)</summary>")
+
+	// Should show outputs with diff syntax
+	assertContains(t, out, "+ instance_id = (known after apply)")
+	assertContains(t, out, "+ public_ip = (known after apply)")
+	assertContains(t, out, "+ bucket_name = my-bucket")
+	assertContains(t, out, "- old_output = old-value")
+
+	// Print output for visual inspection
+	t.Logf("Rendered output:\n%s", out)
+}
+
+// Test that outputs section is not shown when there are no outputs
+func TestNoOutputsSection(t *testing.T) {
+	s := &internal.Summary{
+		Phase:     internal.PhasePlan,
+		Workspace: "test",
+		ToAdd:     1,
+		Creates: []internal.ResourceChange{
+			{Address: "aws_instance.web", Action: internal.ActionCreate},
+		},
+		// No outputs
+	}
+
+	out := render.Render(s)
+
+	// Should NOT have an Outputs section
+	assertNotContains(t, out, "<summary><b>Outputs</b>")
 }

@@ -35,6 +35,9 @@ var (
 	warningRe         = regexp.MustCompile(`Warning:\s+(.+)`)
 	noChangesRe       = regexp.MustCompile(`No changes\.\s+|Your infrastructure matches the configuration`)
 	compactResourceRe = regexp.MustCompile(`^\s+([+\-~])\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?(?:\.[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?)+)$`)
+	// Output changes: "+ output_name = value" or "- output_name = value" or "~ output_name = value"
+	outputChangeRe    = regexp.MustCompile(`^\s*([+\-~])\s+(\w+)\s+=\s+(.+)$`)
+	outputsSectionRe  = regexp.MustCompile(`Changes to Outputs:`)
 )
 
 // Parse reads terraform plan or apply output and returns a Summary.
@@ -52,9 +55,41 @@ func Parse(input string, phase internal.Phase, workspace string, isDestroyPlan b
 	var lastStartedResource string
 	var lastError string
 	completedResources := make(map[string]bool)
+	inOutputsSection := false
 
 	for scanner.Scan() {
 		line := scanner.Text()
+
+		// Check for "Changes to Outputs:" section
+		if outputsSectionRe.MatchString(line) {
+			inOutputsSection = true
+			continue
+		}
+
+		// Parse output changes when in outputs section
+		if inOutputsSection {
+			// Empty line or new section ends outputs section
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "Plan:") || strings.HasPrefix(trimmed, "─") {
+				inOutputsSection = false
+			} else if m := outputChangeRe.FindStringSubmatch(line); len(m) > 3 {
+				action := internal.ActionCreate
+				switch m[1] {
+				case "+":
+					action = internal.ActionCreate
+				case "-":
+					action = internal.ActionDestroy
+				case "~":
+					action = internal.ActionUpdate
+				}
+				s.Outputs = append(s.Outputs, internal.OutputChange{
+					Name:   m[2],
+					Action: action,
+					Value:  strings.TrimSpace(m[3]),
+				})
+				continue
+			}
+		}
 
 		if driftRe.MatchString(line) {
 			s.DriftDetected = true

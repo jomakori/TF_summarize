@@ -44,7 +44,30 @@ func RenderDetails(s *internal.Summary) string {
 
 // RenderOutputs produces terraform outputs section (if any).
 func RenderOutputs(s *internal.Summary) string {
-	return ""
+	if len(s.Outputs) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("<details>\n<summary><b>Outputs</b> (")
+	b.WriteString(fmt.Sprintf("%d", len(s.Outputs)))
+	b.WriteString(")</summary>\n\n```diff\n")
+
+	for _, o := range s.Outputs {
+		prefix := "+"
+		switch o.Action {
+		case internal.ActionCreate:
+			prefix = "+"
+		case internal.ActionDestroy:
+			prefix = "-"
+		case internal.ActionUpdate:
+			prefix = "~"
+		}
+		b.WriteString(fmt.Sprintf("%s %s = %s\n", prefix, o.Name, o.Value))
+	}
+
+	b.WriteString("```\n\n</details>\n\n")
+	return b.String()
 }
 
 // RenderRawOutput produces the collapsible raw terraform output section.
@@ -62,8 +85,34 @@ func renderComplete(s *internal.Summary) string {
 	writeErrors(&b, s)
 	writeSummaryLine(&b, s)
 	writeResourceSections(&b, s)
+	writeOutputs(&b, s)
 	writeRawOutput(&b, s)
 	return b.String()
+}
+
+func writeOutputs(b *strings.Builder, s *internal.Summary) {
+	if len(s.Outputs) == 0 {
+		return
+	}
+
+	b.WriteString("<details>\n<summary><b>Outputs</b> (")
+	b.WriteString(fmt.Sprintf("%d", len(s.Outputs)))
+	b.WriteString(")</summary>\n\n```diff\n")
+
+	for _, o := range s.Outputs {
+		prefix := "+"
+		switch o.Action {
+		case internal.ActionCreate:
+			prefix = "+"
+		case internal.ActionDestroy:
+			prefix = "-"
+		case internal.ActionUpdate:
+			prefix = "~"
+		}
+		b.WriteString(fmt.Sprintf("%s %s = %s\n", prefix, o.Name, o.Value))
+	}
+
+	b.WriteString("```\n\n</details>\n\n")
 }
 
 func writeHeader(b *strings.Builder, s *internal.Summary) {
