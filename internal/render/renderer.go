@@ -25,30 +25,9 @@ const (
 	MessageCaution
 )
 
-// writeMessage outputs a message with provider-specific formatting.
-// For GHA targets (gha, pr): outputs ::error::, ::warning::, or ::notice:: workflow commands.
-// For all targets: outputs markdown alerts (> [!ERROR], > [!WARNING], > [!NOTE], > [!CAUTION]).
-// If context is provided (e.g., resource address), it's included in the workflow command annotation.
+// writeMessage outputs a message with markdown alert formatting (> [!ERROR], > [!WARNING], > [!NOTE], > [!CAUTION]).
 func writeMessage(b *strings.Builder, msgType MessageType, context, message string, target internal.OutputTarget) {
-	// GHA workflow command (only for GHA/PR targets)
-	if target == internal.TargetGHASummary || target == internal.TargetPR {
-		var cmd string
-		switch msgType {
-		case MessageError:
-			cmd = "error"
-		case MessageWarning, MessageCaution:
-			cmd = "warning"
-		case MessageNotice:
-			cmd = "notice"
-		}
-		if context != "" {
-			b.WriteString(fmt.Sprintf("::%s::%s: %s\n", cmd, context, message))
-		} else {
-			b.WriteString(fmt.Sprintf("::%s::%s\n", cmd, message))
-		}
-	}
-
-	// Markdown alert (for all targets)
+	// Markdown alert
 	var alertType string
 	switch msgType {
 	case MessageError:
@@ -113,9 +92,9 @@ func RenderOutputs(s *internal.Summary) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("<details>\n<summary><b>Outputs</b> (")
+	b.WriteString("<details>\n<summary><b>Outputs</b> <b>(")
 	b.WriteString(fmt.Sprintf("%d", len(s.Outputs)))
-	b.WriteString(")</summary>\n\n```diff\n")
+	b.WriteString(")</b></summary>\n\n```diff\n")
 
 	for _, o := range s.Outputs {
 		prefix := "+"
@@ -159,9 +138,9 @@ func writeOutputs(b *strings.Builder, s *internal.Summary) {
 		return
 	}
 
-	b.WriteString("<details>\n<summary><b>Outputs</b> (")
+	b.WriteString("<details>\n<summary><b>Outputs</b> <b>(")
 	b.WriteString(fmt.Sprintf("%d", len(s.Outputs)))
-	b.WriteString(")</summary>\n\n```diff\n")
+	b.WriteString(")</b></summary>\n\n```diff\n")
 
 	for _, o := range s.Outputs {
 		prefix := "+"
@@ -171,7 +150,7 @@ func writeOutputs(b *strings.Builder, s *internal.Summary) {
 		case internal.ActionDestroy:
 			prefix = "-"
 		case internal.ActionUpdate:
-			prefix = "~"
+			prefix = "!"
 		}
 		b.WriteString(fmt.Sprintf("%s %s = %s\n", prefix, o.Name, o.Value))
 	}
@@ -346,7 +325,7 @@ func writeResourceSections(b *strings.Builder, s *internal.Summary) {
 	}
 
 	writeColoredResourceGroup(b, "Create", "+", s.Creates, internal.ColorGreen)
-	writeColoredResourceGroup(b, "Modify", "~", s.Updates, internal.ColorYellow)
+	writeColoredResourceGroup(b, "Modify", "!", s.Updates, internal.ColorYellow)
 	writeColoredResourceGroup(b, "Destroy", "-", s.Destroys, internal.ColorRed)
 	writeColoredResourceGroup(b, "Replace", "-/+", s.Replaces, internal.ColorRed)
 	writeColoredResourceGroup(b, "Import", "←", s.Imports, internal.ColorImport)
@@ -354,7 +333,7 @@ func writeResourceSections(b *strings.Builder, s *internal.Summary) {
 
 func writeApplyResourceSections(b *strings.Builder, s *internal.Summary) {
 	writeApplyResourceGroup(b, "Created", "+", "✅", s.Creates)
-	writeApplyResourceGroup(b, "Updated", "~", "✅", s.Updates)
+	writeApplyResourceGroup(b, "Updated", "!", "✅", s.Updates)
 	writeApplyResourceGroup(b, "Destroyed", "-", "✅", s.Destroys)
 
 	if len(s.Failures) > 0 {
@@ -453,7 +432,7 @@ func colorizeOutput(output string, phase internal.Phase) string {
 		case strings.HasPrefix(trimmed, "- "):
 			result = append(result, fmt.Sprintf("- %s", strings.TrimPrefix(trimmed, "- ")))
 		case strings.HasPrefix(trimmed, "~ "):
-			result = append(result, fmt.Sprintf("~ %s", strings.TrimPrefix(trimmed, "~ ")))
+			result = append(result, fmt.Sprintf("! %s", strings.TrimPrefix(trimmed, "~ ")))
 		case strings.HasPrefix(trimmed, "-/+ "):
 			result = append(result, fmt.Sprintf("-/+ %s", strings.TrimPrefix(trimmed, "-/+ ")))
 		case strings.Contains(trimmed, "Creating..."):
@@ -461,17 +440,17 @@ func colorizeOutput(output string, phase internal.Phase) string {
 		case strings.Contains(trimmed, "Destroying..."):
 			result = append(result, fmt.Sprintf("- %s", trimmed))
 		case strings.Contains(trimmed, "Modifying..."):
-			result = append(result, fmt.Sprintf("~ %s", trimmed))
+			result = append(result, fmt.Sprintf("! %s", trimmed))
 		case strings.Contains(trimmed, "Creation complete"):
 			result = append(result, fmt.Sprintf("+ %s", trimmed))
 		case strings.Contains(trimmed, "Destruction complete"):
 			result = append(result, fmt.Sprintf("- %s", trimmed))
 		case strings.Contains(trimmed, "Modifications complete"):
-			result = append(result, fmt.Sprintf("~ %s", trimmed))
+			result = append(result, fmt.Sprintf("! %s", trimmed))
 		case strings.HasPrefix(trimmed, "Error:"):
 			result = append(result, fmt.Sprintf("- %s", trimmed))
 		case strings.HasPrefix(trimmed, "Warning:"):
-			result = append(result, fmt.Sprintf("~ %s", trimmed))
+			result = append(result, fmt.Sprintf("! %s", trimmed))
 		case strings.HasPrefix(trimmed, "Plan:"):
 			result = append(result, trimmed)
 		case strings.HasPrefix(trimmed, "Apply complete!"):
