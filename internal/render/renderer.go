@@ -212,14 +212,11 @@ func writeBadges(b *strings.Builder, s *internal.Summary) {
 	badges = append(badges, internal.CreateShieldsIOBadge("Terraform", phaseBadge, phaseColor))
 
 	if s.ToAdd > 0 || len(s.Creates) > 0 {
-		count := s.ToAdd
-		label := "Create"
-		if s.Phase == internal.PhaseApply && s.ToAdd == 0 && len(s.Creates) > 0 {
-			count = len(s.Creates)
-			label = "Created"
+		label, count := "Create", s.ToAdd
+		if s.Phase == internal.PhaseApply {
+			label, count = "Created", max(len(s.Creates), s.ToAdd)
 		}
-		msg := fmt.Sprintf("%s (%d)", label, count)
-		badges = append(badges, internal.CreateShieldsIOBadge("", msg, internal.ColorGreen))
+		badges = append(badges, internal.CreateShieldsIOBadge("", fmt.Sprintf("%s (%d)", label, count), internal.ColorGreen))
 	}
 
 	if s.ToChange > 0 {
