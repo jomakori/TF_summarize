@@ -49,6 +49,11 @@ type Summary struct {
 	// Whether this is a destroy plan (terraform plan -destroy)
 	IsDestroyPlan bool
 
+	// TargetProvider indicates the output target for rendering.
+	// This affects error formatting: GHA targets use ::error:: workflow commands,
+	// while other targets use plain markdown alerts.
+	TargetProvider OutputTarget
+
 	// Counts
 	ToAdd     int
 	ToChange  int

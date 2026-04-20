@@ -117,28 +117,35 @@ func run() error {
 		}
 	}
 
-	markdown := render.Render(summary)
-
 	// --- Output using provider pattern ---
 	// Each target does exactly what it says - no implicit behavior
+	// Render separately for each provider to apply provider-specific formatting
 	targets := strings.Split(targetStr, ",")
 
 	for _, t := range targets {
 		t = strings.TrimSpace(t)
 		var provider internal.OutputProvider
+		var targetProvider internal.OutputTarget
 
 		switch t {
 		case "gha":
 			// Writes to GitHub Actions step summary only
 			provider = providers.NewGitHubProvider()
+			targetProvider = internal.TargetGHASummary
 		case "pr":
 			// Writes to PR comment only (does NOT write to GHA step summary)
 			provider = providers.NewGitHubPRProvider()
+			targetProvider = internal.TargetPR
 		case "stdout":
 			provider = providers.NewStdoutProvider()
+			targetProvider = internal.TargetStdout
 		default:
 			return fmt.Errorf("unknown output target: %q (use gha, pr, or stdout)", t)
 		}
+
+		// Set the target provider for rendering (affects error formatting)
+		summary.TargetProvider = targetProvider
+		markdown := render.Render(summary)
 
 		if err := provider.WriteSummary(summary, markdown); err != nil {
 			return fmt.Errorf("writing output via %s provider: %w", provider.Name(), err)

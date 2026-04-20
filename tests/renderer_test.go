@@ -617,3 +617,267 @@ func TestNoOutputsSection(t *testing.T) {
 	// Should NOT have an Outputs section
 	assertNotContains(t, out, "<summary><b>Outputs</b>")
 }
+
+// Test that error formatting is provider-dependent
+func TestErrorFormattingProviderDependent(t *testing.T) {
+	tests := []struct {
+		name           string
+		targetProvider internal.OutputTarget
+		expectGHAError bool // Whether ::error:: should be present
+	}{
+		{
+			name:           "GHA provider outputs ::error:: commands",
+			targetProvider: internal.TargetGHASummary,
+			expectGHAError: true,
+		},
+		{
+			name:           "PR provider outputs ::error:: commands",
+			targetProvider: internal.TargetPR,
+			expectGHAError: true,
+		},
+		{
+			name:           "Stdout provider does NOT output ::error:: commands",
+			targetProvider: internal.TargetStdout,
+			expectGHAError: false,
+		},
+		{
+			name:           "Empty/default provider does NOT output ::error:: commands",
+			targetProvider: "",
+			expectGHAError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &internal.Summary{
+				Phase:          internal.PhasePlan,
+				Workspace:      "test",
+				TargetProvider: tc.targetProvider,
+				Errors: []string{
+					"Test error message",
+				},
+			}
+
+			out := render.Render(s)
+
+			// All providers should have the markdown alert
+			assertContains(t, out, "> [!ERROR]")
+			assertContains(t, out, "Test error message")
+
+			// Only GHA providers should have ::error:: commands
+			hasGHAError := strings.Contains(out, "::error::Test error message")
+			if tc.expectGHAError && !hasGHAError {
+				t.Errorf("expected ::error:: command for provider %q but it was not found.\nOutput:\n%s", tc.targetProvider, out)
+			}
+			if !tc.expectGHAError && hasGHAError {
+				t.Errorf("did NOT expect ::error:: command for provider %q but it was found.\nOutput:\n%s", tc.targetProvider, out)
+			}
+		})
+	}
+}
+
+// Test that apply failures also respect provider-dependent formatting
+func TestApplyFailureFormattingProviderDependent(t *testing.T) {
+	tests := []struct {
+		name           string
+		targetProvider internal.OutputTarget
+		expectGHAError bool
+	}{
+		{
+			name:           "GHA provider outputs ::error:: for failures",
+			targetProvider: internal.TargetGHASummary,
+			expectGHAError: true,
+		},
+		{
+			name:           "Stdout provider does NOT output ::error:: for failures",
+			targetProvider: internal.TargetStdout,
+			expectGHAError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &internal.Summary{
+				Phase:          internal.PhaseApply,
+				Workspace:      "test",
+				TargetProvider: tc.targetProvider,
+				Failures: []internal.ResourceChange{
+					{Address: "aws_instance.test", Action: internal.ActionCreate, Error: "Instance creation failed"},
+				},
+			}
+
+			out := render.Render(s)
+
+			// All providers should have the markdown alert
+			assertContains(t, out, "> [!ERROR]")
+			assertContains(t, out, "Instance creation failed")
+
+			// Only GHA providers should have ::error:: commands with resource context
+			hasGHAError := strings.Contains(out, "::error::aws_instance.test: Instance creation failed")
+			if tc.expectGHAError && !hasGHAError {
+				t.Errorf("expected ::error:: command for provider %q but it was not found.\nOutput:\n%s", tc.targetProvider, out)
+			}
+			if !tc.expectGHAError && hasGHAError {
+				t.Errorf("did NOT expect ::error:: command for provider %q but it was found.\nOutput:\n%s", tc.targetProvider, out)
+			}
+		})
+	}
+}
+
+// Test that warning formatting is provider-dependent
+func TestWarningFormattingProviderDependent(t *testing.T) {
+	tests := []struct {
+		name             string
+		targetProvider   internal.OutputTarget
+		expectGHAWarning bool // Whether ::warning:: should be present
+	}{
+		{
+			name:             "GHA provider outputs ::warning:: commands",
+			targetProvider:   internal.TargetGHASummary,
+			expectGHAWarning: true,
+		},
+		{
+			name:             "PR provider outputs ::warning:: commands",
+			targetProvider:   internal.TargetPR,
+			expectGHAWarning: true,
+		},
+		{
+			name:             "Stdout provider does NOT output ::warning:: commands",
+			targetProvider:   internal.TargetStdout,
+			expectGHAWarning: false,
+		},
+		{
+			name:             "Empty/default provider does NOT output ::warning:: commands",
+			targetProvider:   "",
+			expectGHAWarning: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &internal.Summary{
+				Phase:          internal.PhasePlan,
+				Workspace:      "test",
+				TargetProvider: tc.targetProvider,
+				Warnings: []string{
+					"Test warning message",
+				},
+			}
+
+			out := render.Render(s)
+
+			// All providers should have the markdown alert
+			assertContains(t, out, "> [!WARNING]")
+			assertContains(t, out, "Test warning message")
+
+			// Only GHA providers should have ::warning:: commands
+			hasGHAWarning := strings.Contains(out, "::warning::Test warning message")
+			if tc.expectGHAWarning && !hasGHAWarning {
+				t.Errorf("expected ::warning:: command for provider %q but it was not found.\nOutput:\n%s", tc.targetProvider, out)
+			}
+			if !tc.expectGHAWarning && hasGHAWarning {
+				t.Errorf("did NOT expect ::warning:: command for provider %q but it was found.\nOutput:\n%s", tc.targetProvider, out)
+			}
+		})
+	}
+}
+
+// Test that caution messages (destructive operations) are provider-dependent
+func TestCautionFormattingProviderDependent(t *testing.T) {
+	tests := []struct {
+		name             string
+		targetProvider   internal.OutputTarget
+		expectGHAWarning bool // Caution uses ::warning:: in GHA
+	}{
+		{
+			name:             "GHA provider outputs ::warning:: for caution",
+			targetProvider:   internal.TargetGHASummary,
+			expectGHAWarning: true,
+		},
+		{
+			name:             "PR provider outputs ::warning:: for caution",
+			targetProvider:   internal.TargetPR,
+			expectGHAWarning: true,
+		},
+		{
+			name:             "Stdout provider does NOT output ::warning:: for caution",
+			targetProvider:   internal.TargetStdout,
+			expectGHAWarning: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &internal.Summary{
+				Phase:          internal.PhasePlan,
+				Workspace:      "test",
+				TargetProvider: tc.targetProvider,
+				ToDestroy:      1,
+				Destroys: []internal.ResourceChange{
+					{Address: "aws_instance.test", Action: internal.ActionDestroy},
+				},
+			}
+
+			out := render.Render(s)
+
+			// All providers should have the markdown CAUTION alert
+			assertContains(t, out, "> [!CAUTION]")
+			assertContains(t, out, "Terraform will delete resources")
+
+			// Only GHA providers should have ::warning:: commands for caution
+			hasGHAWarning := strings.Contains(out, "::warning::")
+			if tc.expectGHAWarning && !hasGHAWarning {
+				t.Errorf("expected ::warning:: command for provider %q but it was not found.\nOutput:\n%s", tc.targetProvider, out)
+			}
+			if !tc.expectGHAWarning && hasGHAWarning {
+				t.Errorf("did NOT expect ::warning:: command for provider %q but it was found.\nOutput:\n%s", tc.targetProvider, out)
+			}
+		})
+	}
+}
+
+// Test that drift warnings are provider-dependent
+func TestDriftWarningFormattingProviderDependent(t *testing.T) {
+	tests := []struct {
+		name             string
+		targetProvider   internal.OutputTarget
+		expectGHAWarning bool
+	}{
+		{
+			name:             "GHA provider outputs ::warning:: for drift",
+			targetProvider:   internal.TargetGHASummary,
+			expectGHAWarning: true,
+		},
+		{
+			name:             "Stdout provider does NOT output ::warning:: for drift",
+			targetProvider:   internal.TargetStdout,
+			expectGHAWarning: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &internal.Summary{
+				Phase:          internal.PhasePlan,
+				Workspace:      "test",
+				TargetProvider: tc.targetProvider,
+				DriftDetected:  true,
+			}
+
+			out := render.Render(s)
+
+			// All providers should have the markdown WARNING alert
+			assertContains(t, out, "> [!WARNING]")
+			assertContains(t, out, "Drift detected")
+
+			// Only GHA providers should have ::warning:: commands
+			hasGHAWarning := strings.Contains(out, "::warning::")
+			if tc.expectGHAWarning && !hasGHAWarning {
+				t.Errorf("expected ::warning:: command for provider %q but it was not found.\nOutput:\n%s", tc.targetProvider, out)
+			}
+			if !tc.expectGHAWarning && hasGHAWarning {
+				t.Errorf("did NOT expect ::warning:: command for provider %q but it was found.\nOutput:\n%s", tc.targetProvider, out)
+			}
+		})
+	}
+}
