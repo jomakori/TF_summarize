@@ -60,8 +60,26 @@ func run() error {
 	var summary *internal.Summary
 	var err error
 
-	// Try JSON plan first if available
-	if jsonPlanFile != "" {
+	// For apply phase, always read from stdin to capture actual apply output
+	// JSON plan is only useful for plan phase (pre-apply analysis)
+	if phase == internal.PhaseApply {
+		// Read from stdin for apply output
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("reading stdin: %w", err)
+		}
+		input = string(data)
+
+		if strings.TrimSpace(input) == "" {
+			return fmt.Errorf("no terraform apply output received — terraform may have failed before producing output")
+		}
+
+		summary, err = parser.Parse(input, phase, workspace, isDestroyPlan)
+		if err != nil {
+			return fmt.Errorf("parsing terraform output: %w", err)
+		}
+	} else if jsonPlanFile != "" {
+		// For plan phase, try JSON plan first if available
 		data, err := os.ReadFile(jsonPlanFile)
 		if err != nil {
 			return fmt.Errorf("reading JSON plan file %s: %w", jsonPlanFile, err)
@@ -72,7 +90,7 @@ func run() error {
 		}
 		summary.Phase = phase
 	} else {
-		// Fall back to text parsing
+		// Fall back to text parsing for plan phase
 		if inputFile != "" {
 			data, err := os.ReadFile(inputFile)
 			if err != nil {
@@ -99,28 +117,45 @@ func run() error {
 		}
 	}
 
-	markdown := render.Render(summary)
-
 	// --- Output using provider pattern ---
+	// Each target does exactly what it says - no implicit behavior
+	// Render separately for each provider to apply provider-specific formatting
 	targets := strings.Split(targetStr, ",")
+
 	for _, t := range targets {
 		t = strings.TrimSpace(t)
 		var provider internal.OutputProvider
+		var targetProvider internal.OutputTarget
 
 		switch t {
 		case "gha":
+			// Writes to GitHub Actions step summary only
 			provider = providers.NewGitHubProvider()
+			targetProvider = internal.TargetGHASummary
 		case "pr":
-			provider = providers.NewGitHubProvider()
+			// Writes to PR comment only (does NOT write to GHA step summary)
+			provider = providers.NewGitHubPRProvider()
+			targetProvider = internal.TargetPR
 		case "stdout":
 			provider = providers.NewStdoutProvider()
+			targetProvider = internal.TargetStdout
 		default:
 			return fmt.Errorf("unknown output target: %q (use gha, pr, or stdout)", t)
 		}
 
+		// Set the target provider for rendering (affects error formatting)
+		summary.TargetProvider = targetProvider
+		markdown := render.Render(summary)
+
 		if err := provider.WriteSummary(summary, markdown); err != nil {
 			return fmt.Errorf("writing output via %s provider: %w", provider.Name(), err)
 		}
+	}
+
+	// Exit with error code if terraform errors were detected
+	if len(summary.Errors) > 0 || len(summary.Failures) > 0 {
+		fmt.Fprintf(os.Stderr, "⚠ Terraform errors detected (%d errors, %d failures) - exiting with code 1\n", len(summary.Errors), len(summary.Failures))
+		os.Exit(1) // signal terraform error
 	}
 
 	// Set exit code based on changes (useful for CI)
@@ -158,7 +193,7 @@ ENVIRONMENT VARIABLES:
   TF_OUTPUT           Output target(s): "stdout", "gha", "pr" (comma-separated, default: "stdout")
   GITHUB_TOKEN        GitHub token for posting PR comments (required for "pr" output)
   GITHUB_REPOSITORY   Repository in "owner/repo" format (set automatically in GitHub Actions)
-  PR_NUMBER           Pull request number to comment on (required for "pr" output)
+  PR_NUMBER           Pull request number to comment on (optional - auto-detected from branch)
   GITHUB_API_URL      GitHub API base URL (default: "https://api.github.com")
   TF_EXIT_ON_CHANGES  Exit with code 2 when changes detected (default: "false")
   DESTROY             Set to "true" or "1" for destroy plans (changes phase badge to red)

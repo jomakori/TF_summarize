@@ -34,6 +34,13 @@ type ResourceChange struct {
 	Details   map[string]interface{} // For future extensibility
 }
 
+// OutputChange represents a Terraform output that will be created/changed/destroyed.
+type OutputChange struct {
+	Name   string // Output name
+	Action Action // create, update, destroy
+	Value  string // Value (may be "known after apply" or sensitive)
+}
+
 // Summary holds the parsed result of a terraform plan or apply output.
 type Summary struct {
 	Phase     Phase
@@ -41,6 +48,11 @@ type Summary struct {
 
 	// Whether this is a destroy plan (terraform plan -destroy)
 	IsDestroyPlan bool
+
+	// TargetProvider indicates the output target for rendering.
+	// This affects error formatting: GHA targets use ::error:: workflow commands,
+	// while other targets use plain markdown alerts.
+	TargetProvider OutputTarget
 
 	// Counts
 	ToAdd     int
@@ -68,6 +80,9 @@ type Summary struct {
 	// Warnings/errors from the output
 	Warnings []string
 	Errors   []string
+
+	// Terraform outputs (from "Changes to Outputs" section)
+	Outputs []OutputChange
 
 	// Raw output for the detail dropdown (full terraform output)
 	RawOutput string

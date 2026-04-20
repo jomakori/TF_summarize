@@ -7,6 +7,70 @@ import (
 	"github.com/jomakori/TF_summarize/internal"
 )
 
+// MessageType represents the type of message to output (error, warning, notice).
+type MessageType int
+
+const (
+	// MessageError represents an error message.
+	// GHA: ::error::, Markdown: > [!ERROR]
+	MessageError MessageType = iota
+	// MessageWarning represents a warning message.
+	// GHA: ::warning::, Markdown: > [!WARNING]
+	MessageWarning
+	// MessageNotice represents an informational notice.
+	// GHA: ::notice::, Markdown: > [!NOTE]
+	MessageNotice
+	// MessageCaution represents a caution message (destructive operations).
+	// GHA: ::warning::, Markdown: > [!CAUTION]
+	MessageCaution
+)
+
+// writeMessage outputs a message with provider-specific formatting.
+// For GHA targets (gha, pr): outputs ::error::, ::warning::, or ::notice:: workflow commands.
+// For all targets: outputs markdown alerts (> [!ERROR], > [!WARNING], > [!NOTE], > [!CAUTION]).
+// If context is provided (e.g., resource address), it's included in the workflow command annotation.
+func writeMessage(b *strings.Builder, msgType MessageType, context, message string, target internal.OutputTarget) {
+	// GHA workflow command (only for GHA/PR targets)
+	if target == internal.TargetGHASummary || target == internal.TargetPR {
+		var cmd string
+		switch msgType {
+		case MessageError:
+			cmd = "error"
+		case MessageWarning, MessageCaution:
+			cmd = "warning"
+		case MessageNotice:
+			cmd = "notice"
+		}
+		if context != "" {
+			b.WriteString(fmt.Sprintf("::%s::%s: %s\n", cmd, context, message))
+		} else {
+			b.WriteString(fmt.Sprintf("::%s::%s\n", cmd, message))
+		}
+	}
+
+	// Markdown alert (for all targets)
+	var alertType string
+	switch msgType {
+	case MessageError:
+		alertType = "ERROR"
+	case MessageWarning:
+		alertType = "WARNING"
+	case MessageNotice:
+		alertType = "NOTE"
+	case MessageCaution:
+		alertType = "CAUTION"
+	}
+	b.WriteString(fmt.Sprintf("> [!%s]\n> %s\n\n", alertType, message))
+}
+
+// writeError writes an error message with appropriate formatting based on the target provider.
+// For GHA targets (gha, pr), it outputs ::error:: workflow commands for annotations.
+// For other targets (stdout), it outputs only markdown alerts.
+// If context is provided (e.g., resource address), it's included in the ::error:: annotation.
+func writeError(b *strings.Builder, context string, message string, target internal.OutputTarget) {
+	writeMessage(b, MessageError, context, message, target)
+}
+
 // Render produces a complete markdown summary for the given Summary.
 func Render(s *internal.Summary) string {
 	output := RenderFull(s)
@@ -44,7 +108,30 @@ func RenderDetails(s *internal.Summary) string {
 
 // RenderOutputs produces terraform outputs section (if any).
 func RenderOutputs(s *internal.Summary) string {
-	return ""
+	if len(s.Outputs) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("<details>\n<summary><b>Outputs</b> (")
+	b.WriteString(fmt.Sprintf("%d", len(s.Outputs)))
+	b.WriteString(")</summary>\n\n```diff\n")
+
+	for _, o := range s.Outputs {
+		prefix := "+"
+		switch o.Action {
+		case internal.ActionCreate:
+			prefix = "+"
+		case internal.ActionDestroy:
+			prefix = "-"
+		case internal.ActionUpdate:
+			prefix = "~"
+		}
+		b.WriteString(fmt.Sprintf("%s %s = %s\n", prefix, o.Name, o.Value))
+	}
+
+	b.WriteString("```\n\n</details>\n\n")
+	return b.String()
 }
 
 // RenderRawOutput produces the collapsible raw terraform output section.
@@ -62,8 +149,34 @@ func renderComplete(s *internal.Summary) string {
 	writeErrors(&b, s)
 	writeSummaryLine(&b, s)
 	writeResourceSections(&b, s)
+	writeOutputs(&b, s)
 	writeRawOutput(&b, s)
 	return b.String()
+}
+
+func writeOutputs(b *strings.Builder, s *internal.Summary) {
+	if len(s.Outputs) == 0 {
+		return
+	}
+
+	b.WriteString("<details>\n<summary><b>Outputs</b> (")
+	b.WriteString(fmt.Sprintf("%d", len(s.Outputs)))
+	b.WriteString(")</summary>\n\n```diff\n")
+
+	for _, o := range s.Outputs {
+		prefix := "+"
+		switch o.Action {
+		case internal.ActionCreate:
+			prefix = "+"
+		case internal.ActionDestroy:
+			prefix = "-"
+		case internal.ActionUpdate:
+			prefix = "~"
+		}
+		b.WriteString(fmt.Sprintf("%s %s = %s\n", prefix, o.Name, o.Value))
+	}
+
+	b.WriteString("```\n\n</details>\n\n")
 }
 
 func writeHeader(b *strings.Builder, s *internal.Summary) {
@@ -98,9 +211,12 @@ func writeBadges(b *strings.Builder, s *internal.Summary) {
 
 	badges = append(badges, internal.CreateShieldsIOBadge("Terraform", phaseBadge, phaseColor))
 
-	if s.ToAdd > 0 {
-		msg := fmt.Sprintf("Create (%d)", s.ToAdd)
-		badges = append(badges, internal.CreateShieldsIOBadge("", msg, internal.ColorGreen))
+	if s.ToAdd > 0 || len(s.Creates) > 0 {
+		label, count := "Create", s.ToAdd
+		if s.Phase == internal.PhaseApply {
+			label, count = "Created", max(len(s.Creates), s.ToAdd)
+		}
+		badges = append(badges, internal.CreateShieldsIOBadge("", fmt.Sprintf("%s (%d)", label, count), internal.ColorGreen))
 	}
 
 	if s.ToChange > 0 {
@@ -123,7 +239,8 @@ func writeBadges(b *strings.Builder, s *internal.Summary) {
 		badges = append(badges, internal.CreateShieldsIOBadge("", msg, internal.ColorImport))
 	}
 
-	if s.ToAdd == 0 && s.ToChange == 0 && s.ToDestroy == 0 && s.ToImport == 0 && len(s.Replaces) == 0 {
+	if s.ToAdd == 0 && s.ToChange == 0 && s.ToDestroy == 0 && s.ToImport == 0 && len(s.Replaces) == 0 &&
+		len(s.Creates) == 0 && len(s.Destroys) == 0 && len(s.Updates) == 0 && len(s.Failures) == 0 {
 		badges = append(badges, internal.CreateShieldsIOBadge("", "No Changes", internal.ColorNoChanges))
 	}
 
@@ -143,19 +260,16 @@ func writeBadges(b *strings.Builder, s *internal.Summary) {
 func writeWarnings(b *strings.Builder, s *internal.Summary) {
 	if s.ToDestroy > 0 || len(s.Replaces) > 0 {
 		if s.Phase == internal.PhasePlan {
-			b.WriteString("> [!CAUTION]\n")
-			b.WriteString("> **Terraform will delete resources!**\n")
-			b.WriteString("> This plan contains resource delete operations. Please check the plan result very carefully.\n\n")
+			writeMessage(b, MessageCaution, "", "**Terraform will delete resources!** This plan contains resource delete operations. Please check the plan result very carefully.", s.TargetProvider)
 		}
 	}
 
 	if s.DriftDetected {
-		b.WriteString("> [!WARNING]\n")
-		b.WriteString("> **Drift detected!** Objects have changed outside of Terraform.\n\n")
+		writeMessage(b, MessageWarning, "", "**Drift detected!** Objects have changed outside of Terraform.", s.TargetProvider)
 	}
 
 	for _, w := range s.Warnings {
-		b.WriteString(fmt.Sprintf("> [!WARNING]\n> %s\n\n", w))
+		writeMessage(b, MessageWarning, "", w, s.TargetProvider)
 	}
 }
 
@@ -164,7 +278,11 @@ func writeErrors(b *strings.Builder, s *internal.Summary) {
 		return
 	}
 	for _, e := range s.Errors {
-		b.WriteString(fmt.Sprintf("> [!CAUTION]\n> **Error:** %s\n\n", e))
+		// Skip generic exit code messages - they're too generic and redundant
+		if strings.Contains(e, "exited with code") {
+			continue
+		}
+		writeError(b, "", e, s.TargetProvider)
 	}
 }
 
@@ -247,9 +365,8 @@ func writeApplyResourceSections(b *strings.Builder, s *internal.Summary) {
 		for _, r := range s.Failures {
 			b.WriteString(fmt.Sprintf("**`%s`**\n", r.Address))
 			if r.Error != "" {
-				b.WriteString(fmt.Sprintf("> %s\n", r.Error))
+				writeError(b, r.Address, r.Error, s.TargetProvider)
 			}
-			b.WriteString("\n")
 		}
 
 		b.WriteString("</details>\n\n")
@@ -307,9 +424,28 @@ func writeRawOutput(b *strings.Builder, s *internal.Summary) {
 func colorizeOutput(output string, phase internal.Phase) string {
 	lines := strings.Split(output, "\n")
 	var result []string
+	inErrorBlock := false
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
+
+		// Detect Terraform error block boundaries (╷ starts, ╵ ends)
+		if strings.HasPrefix(trimmed, "╷") {
+			inErrorBlock = true
+			result = append(result, fmt.Sprintf("- %s", line))
+			continue
+		}
+		if strings.HasPrefix(trimmed, "╵") {
+			inErrorBlock = false
+			result = append(result, fmt.Sprintf("- %s", line))
+			continue
+		}
+
+		// If inside an error block, highlight all lines in red
+		if inErrorBlock {
+			result = append(result, fmt.Sprintf("- %s", line))
+			continue
+		}
 
 		switch {
 		case strings.HasPrefix(trimmed, "+ "):
