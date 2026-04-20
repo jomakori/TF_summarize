@@ -408,6 +408,13 @@ func colorizeOutput(output string, phase internal.Phase) string {
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
+		// Filter out GitHub Actions workflow commands - these shouldn't appear in raw output
+		if strings.HasPrefix(trimmed, "::error::") ||
+			strings.HasPrefix(trimmed, "::warning::") ||
+			strings.HasPrefix(trimmed, "::notice::") {
+			continue
+		}
+
 		// Detect Terraform error block boundaries (╷ starts, ╵ ends)
 		if strings.HasPrefix(trimmed, "╷") {
 			inErrorBlock = true
