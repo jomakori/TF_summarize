@@ -208,7 +208,7 @@ func TestParsePlanCreate(t *testing.T) {
 	assertCount(t, s.ToChange, 0, "to change")
 	assertCount(t, s.ToDestroy, 0, "to destroy")
 	assertCount(t, len(s.Creates), 3, "create resources")
-	
+
 	if len(s.Creates) > 0 {
 		assertAddress(t, s.Creates[0].Address, "module.s3_bucket.aws_s3_bucket.default[0]", "first create")
 	}
@@ -257,7 +257,7 @@ func TestParseApplyMixed(t *testing.T) {
 	}
 	assertCount(t, len(s.Creates), 1, "created resources")
 	assertCount(t, len(s.Failures), 1, "failures")
-	
+
 	if len(s.Failures) > 0 {
 		assertAddress(t, s.Failures[0].Address, "module.rds.aws_db_instance.main", "failure")
 		if s.Failures[0].Error == "" {
@@ -279,7 +279,7 @@ func TestParseApplyFail(t *testing.T) {
 		t.Error("expected at least one error")
 	}
 	assertCount(t, len(s.Failures), 1, "failures")
-	
+
 	if len(s.Failures) > 0 {
 		assertAddress(t, s.Failures[0].Address, "module.rds.aws_db_instance.main", "failure")
 	}
@@ -398,12 +398,114 @@ func TestParsePlanCreateWithANSI(t *testing.T) {
 	assertCount(t, s.ToDestroy, 0, "to destroy")
 	assertCount(t, len(s.Creates), 3, "create resources in test data")
 	assertCount(t, len(s.Reads), 2, "read resources")
-	
+
 	// Verify ANSI codes are stripped from addresses
 	if len(s.Creates) > 0 {
 		assertAddress(t, s.Creates[0].Address, "doppler_secret.tailscale_auth_key", "first create")
 	}
 	if len(s.Reads) > 0 {
 		assertAddress(t, s.Reads[0].Address, "module.compute_instance.data.oci_core_private_ips.private_ips[0]", "first read")
+	}
+}
+
+// Test for terraform CLI errors with box format (e.g., "Too many command line arguments")
+const cliErrorOutput = `
+╷
+│ Error: Too many command line arguments
+│
+│ Expected at most one positional argument.
+╵
+
+For more help on using this command, run:
+  terraform apply -help
+`
+
+func TestParseCLIError(t *testing.T) {
+	s, err := parser.Parse(cliErrorOutput, internal.PhaseApply, "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Errors) == 0 {
+		t.Error("expected CLI error to be detected")
+	}
+
+	if len(s.Errors) > 0 && !strings.Contains(s.Errors[0], "Too many command line arguments") {
+		t.Errorf("expected error message to contain 'Too many command line arguments', got: %s", s.Errors[0])
+	}
+
+	// Apply should not be marked as succeeded when there's a CLI error
+	if s.ApplySucceeded {
+		t.Error("expected ApplySucceeded to be false when CLI error detected")
+	}
+}
+
+// Test for terraform CLI errors without box format
+const cliErrorSimpleOutput = `
+Error: Too many command line arguments
+
+Expected at most one positional argument.
+`
+
+func TestParseCLIErrorSimple(t *testing.T) {
+	s, err := parser.Parse(cliErrorSimpleOutput, internal.PhaseApply, "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Errors) == 0 {
+		t.Error("expected CLI error to be detected")
+	}
+
+	if s.ApplySucceeded {
+		t.Error("expected ApplySucceeded to be false when CLI error detected")
+	}
+}
+
+// Test for terraform apply with invalid flag error
+const invalidFlagErrorOutput = `
+╷
+│ Error: Failed to parse command-line flags
+│
+│ flag provided but not defined: -invalid-flag
+╵
+`
+
+func TestParseInvalidFlagError(t *testing.T) {
+	s, err := parser.Parse(invalidFlagErrorOutput, internal.PhaseApply, "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Errors) == 0 {
+		t.Error("expected invalid flag error to be detected")
+	}
+
+	if s.ApplySucceeded {
+		t.Error("expected ApplySucceeded to be false when invalid flag error detected")
+	}
+}
+
+// Test for GitHub Actions error annotation format
+const ghaErrorAnnotationOutput = `
+::error::Terraform exited with code 1.
+`
+
+func TestParseGHAErrorAnnotation(t *testing.T) {
+	s, err := parser.Parse(ghaErrorAnnotationOutput, internal.PhaseApply, "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Errors) == 0 {
+		t.Error("expected GHA error annotation to be detected")
+	}
+
+	if len(s.Errors) > 0 && !strings.Contains(s.Errors[0], "Terraform exited with code 1") {
+		t.Errorf("expected error message to contain 'Terraform exited with code 1', got: %s", s.Errors[0])
+	}
+
+	if s.ApplySucceeded {
+		t.Error("expected ApplySucceeded to be false when GHA error annotation detected")
 	}
 }

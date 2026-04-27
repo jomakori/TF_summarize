@@ -24,13 +24,20 @@ var (
 	applyCreatingRe   = regexp.MustCompile(`^(\S+):\s+Creating\.\.\.`)
 	applyModifyingRe  = regexp.MustCompile(`^(\S+):\s+Modifying\.\.\.`)
 	applyDestroyingRe = regexp.MustCompile(`^(\S+):\s+Destroying\.\.\.`)
-	applyErrorRe      = regexp.MustCompile(`^Error:\s+(.+)`)
+	// Match multiple error formats:
+	// - Standard: "Error: msg"
+	// - Box format: "│ Error: msg"
+	// - GitHub Actions annotation: "::error::msg"
+	applyErrorRe      = regexp.MustCompile(`(?:^│\s*)?Error:\s+(.+)|^::error::(.+)`)
 	applyResultRe     = regexp.MustCompile(`Apply complete!\s+Resources:\s+(\d+)\s+added,\s+(\d+)\s+changed,\s+(\d+)\s+destroyed`)
 	errorResourceRe   = regexp.MustCompile(`with\s+(\S+),`)
 	driftRe           = regexp.MustCompile(`drift|Objects have changed outside of Terraform`)
 	warningRe         = regexp.MustCompile(`Warning:\s+(.+)`)
 	noChangesRe       = regexp.MustCompile(`No changes\.\s+|Your infrastructure matches the configuration`)
 	compactResourceRe = regexp.MustCompile(`^\s+([+\-~])\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?(?:\.[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?)+)$`)
+	// Output changes: "+ output_name = value" or "- output_name = value" or "~ output_name = value"
+	outputChangeRe    = regexp.MustCompile(`^\s*([+\-~])\s+(\w+)\s+=\s+(.+)$`)
+	outputsSectionRe  = regexp.MustCompile(`Changes to Outputs:`)
 )
 
 // Parse reads terraform plan or apply output and returns a Summary.
@@ -48,9 +55,41 @@ func Parse(input string, phase internal.Phase, workspace string, isDestroyPlan b
 	var lastStartedResource string
 	var lastError string
 	completedResources := make(map[string]bool)
+	inOutputsSection := false
 
 	for scanner.Scan() {
 		line := scanner.Text()
+
+		// Check for "Changes to Outputs:" section
+		if outputsSectionRe.MatchString(line) {
+			inOutputsSection = true
+			continue
+		}
+
+		// Parse output changes when in outputs section
+		if inOutputsSection {
+			// Empty line or new section ends outputs section
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "Plan:") || strings.HasPrefix(trimmed, "─") {
+				inOutputsSection = false
+			} else if m := outputChangeRe.FindStringSubmatch(line); len(m) > 3 {
+				action := internal.ActionCreate
+				switch m[1] {
+				case "+":
+					action = internal.ActionCreate
+				case "-":
+					action = internal.ActionDestroy
+				case "~":
+					action = internal.ActionUpdate
+				}
+				s.Outputs = append(s.Outputs, internal.OutputChange{
+					Name:   m[2],
+					Action: action,
+					Value:  strings.TrimSpace(m[3]),
+				})
+				continue
+			}
+		}
 
 		if driftRe.MatchString(line) {
 			s.DriftDetected = true
@@ -61,10 +100,19 @@ func Parse(input string, phase internal.Phase, workspace string, isDestroyPlan b
 		}
 
 		if m := applyErrorRe.FindStringSubmatch(line); len(m) > 1 {
-			lastError = strings.TrimSpace(m[1])
-			s.Errors = append(s.Errors, lastError)
-			if s.ApplyError == "" {
-				s.ApplyError = lastError
+			// Handle multiple capture groups - use first non-empty match
+			var errMsg string
+			if m[1] != "" {
+				errMsg = strings.TrimSpace(m[1])
+			} else if len(m) > 2 && m[2] != "" {
+				errMsg = strings.TrimSpace(m[2])
+			}
+			if errMsg != "" {
+				lastError = errMsg
+				s.Errors = append(s.Errors, lastError)
+				if s.ApplyError == "" {
+					s.ApplyError = lastError
+				}
 			}
 		}
 
