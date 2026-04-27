@@ -1,349 +1,196 @@
 # tf-summarize
 
-A small Go CLI that parses Terraform `plan` and `apply` output and produces a
-beautified Markdown summary — suitable for GitHub Actions step summaries or
+A Go CLI that parses Terraform `plan` and `apply` output and produces a
+beautified Markdown summaries — suitable for GitHub Actions step summaries or
 PR comments.
-
-**New in v2.0**: Structured JSON plan parsing for accurate resource change detection,
-provider abstraction for extensible output handling, and modular rendering functions.
 
 ## Usage
 
-### Text Output Parsing (Default)
-
 ```bash
-# Pipe terraform plan output
+# Pipe parsing
 terraform plan -no-color | tf-summarize
-
-# Or point to a saved output file
-terraform plan -no-color -out=plan.out > plan.txt
 TF_PLAN_FILE=plan.txt tf-summarize
+
+# JSON parsing (recommended)
+terraform plan -out=plan.tfplan && terraform show -json plan.tfplan > plan.json
+TF_PLAN_JSON=plan.json tf-summarize
 
 # Apply phase
 terraform apply -no-color -auto-approve 2>&1 | TF_PHASE=apply tf-summarize
 ```
 
-### JSON Plan Parsing (Recommended)
-
-For more accurate resource change detection, use structured JSON plan parsing:
-
-```bash
-# Generate JSON plan
-terraform plan -out=plan.tfplan
-terraform show -json plan.tfplan > plan.json
-
-# Parse with JSON (more accurate than text parsing)
-TF_PLAN_JSON=plan.json tf-summarize
-
-# Or combine with other options
-TF_PLAN_JSON=plan.json TF_WORKSPACE=prod TF_OUTPUT=gha,pr tf-summarize
-```
-
 ## Environment Variables
 
-| Variable              | Required | Default   | Description                                                  |
-| --------------------- | -------- | --------- | ------------------------------------------------------------ |
-| `TF_PLAN_FILE`        | No       | _(stdin)_ | Path to file containing terraform plan/apply text output     |
-| `TF_WORKSPACE`        | No       | `default` | Workspace name shown in the header (falls back to `WORKSPACE`) |
-| `TF_PHASE`            | No       | `plan`    | `plan` or `apply` — controls header messaging and parsing    |
-| `TF_OUTPUT`           | No       | `stdout`  | Output target(s): `stdout`, `gha`, `pr` (comma-separated)   |
-| `DESTROY`             | No       | `false`   | Set to `true` or `1` for destroy plans (changes phase badge to red) |
-| `GITHUB_TOKEN`        | For PR   | —         | GitHub token for posting PR comments                         |
-| `GITHUB_REPOSITORY`   | For PR   | —         | `owner/repo` — set automatically in GHA                      |
-| `PR_NUMBER`           | For PR   | —         | Pull request number to comment on                            |
-| `GITHUB_API_URL`      | No       | `https://api.github.com` | GitHub API base URL (for GHES)              |
-| `TF_EXIT_ON_CHANGES`  | No       | `false`   | Exit code 2 when changes are detected (useful for CI gates)  |
+| Variable             | Required | Default                  | Description                                               |
+| -------------------- | -------- | ------------------------ | --------------------------------------------------------- |
+| `TF_PLAN_FILE`       | No       | _(stdin)_                | Path to terraform plan/apply text output                  |
+| `TF_PLAN_JSON`       | No       | —                        | Path to `terraform show -json` output (preferred)         |
+| `TF_WORKSPACE`       | No       | `default`                | Workspace name shown in header                            |
+| `TF_PHASE`           | No       | `plan`                   | `plan` or `apply`                                         |
+| `TF_OUTPUT`          | No       | `stdout`                 | Output target(s): `stdout`, `gha`, `pr` (comma-separated) |
+| `DESTROY`            | No       | `false`                  | `true`/`1` for destroy plans (red badge)                  |
+| `GITHUB_TOKEN`       | For PR   | —                        | GitHub token for PR comments                              |
+| `GITHUB_REPOSITORY`  | For PR   | —                        | `owner/repo` (auto-set in GHA)                            |
+| `PR_NUMBER`          | For PR   | —                        | PR number to comment on                                   |
+| `GITHUB_API_URL`     | No       | `https://api.github.com` | GitHub API base URL (for GHES)                            |
+| `TF_EXIT_ON_CHANGES` | No       | `false`                  | Exit code 2 when changes detected                         |
 
 ## GitHub Actions Example
 
 ```yaml
-jobs:
-  plan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Terraform Plan
-        id: plan
-        run: terraform plan -no-color 2>&1 | tee plan.txt
-
-      - name: Summarize Plan
-        if: always()
-        env:
-          TF_PLAN_FILE: plan.txt
-          TF_WORKSPACE: ${{ github.event.inputs.workspace || 'dev' }}
-          TF_PHASE: plan
-          TF_OUTPUT: gha,pr
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: tf-summarize
-
-  apply:
-    runs-on: ubuntu-latest
-    needs: plan
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Terraform Apply
-        run: terraform apply -no-color -auto-approve 2>&1 | tee apply.txt
-
-      - name: Summarize Apply
-        if: always()
-        env:
-          TF_PLAN_FILE: apply.txt
-          TF_WORKSPACE: prod
-          TF_PHASE: apply
-          TF_OUTPUT: gha,pr
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: tf-summarize
+- name: Summarize Plan
+  if: always()
+  env:
+    TF_PLAN_JSON: plan.json
+    TF_WORKSPACE: ${{ github.event.inputs.workspace || 'dev' }}
+    TF_PHASE: plan
+    TF_OUTPUT: gha,pr
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    PR_NUMBER: ${{ github.event.pull_request.number }}
+  run: tf-summarize
 ```
 
 ## Output
 
-Badges use [shields.io](https://shields.io) styling with color-coded change types:
-- **Create** (green #28a745) — new resources
-- **Modify** (yellow #FFC107) — resource modifications
-- **Remove** (red #dc3545) — resource deletions
-- **Replace** (red #dc3545) — resource replacements
-- **Import** (purple #6f42c1) — imported resources
-- **No Changes** (blue #0366d6) — no detected changes
-- **Drift Detected** (orange #fd7e14) — drift warnings
+### Change Type Badges
 
-Phase badges adapt based on plan type and success:
-- **Plan** (blue #007bff) — terraform plan
-- **Destroy** (red #dc3545) — destroy plan (when `DESTROY=true`)
-- **Apply** (green #28a745) — successful apply
-- **Apply** (red #dc3545) — failed apply
+| Change Type    | Color  |
+| -------------- | ------ |
+| Create         | Green  |
+| Modify         | Yellow |
+| Remove/Replace | Red    |
+| Import         | Purple |
+| No Changes     | Blue   |
+| Drift          | Orange |
 
-### Plan — Create
+### Phase Badges
 
-```
-## 📋 Changes found for `plat-ue2-sandbox`
+| Phase           | Color | Condition       |
+| --------------- | ----- | --------------- |
+| Plan            | Blue  | Default         |
+| Destroy         | Red   | `DESTROY=true`  |
+| Apply (success) | Green | Apply succeeded |
+| Apply (failed)  | Red   | Apply failed    |
 
-![Terraform](https://img.shields.io/badge/Terraform-Plan-007bff) ![](https://img.shields.io/badge/-Create%20(9)-28a745)
+### Scenarios
 
-**Plan:** **9** to add
+| Scenario         | Header                                         | Notes                                            |
+| ---------------- | ---------------------------------------------- | ------------------------------------------------ |
+| Plan w/ changes  | `Changes found for {workspace}`                | Caution alert shown if destroys/replaces present |
+| Plan — no change | `No changes found for {workspace}`             | Single "No Changes" badge                        |
+| Plan — destroy   | `Changes found for {workspace}`                | Phase badge red; `DESTROY=true`                  |
+| Apply — success  | `Changes applied successfully for {workspace}` | Resource sections collapsible                    |
+| Apply — failure  | `❌ Apply failed for {workspace}`              | Failed section open by default with errors       |
 
-▸ Create (9)          — collapsible resource list
-▸ Terraform Plan Output — collapsible full plan diff
-```
+## Architecture
 
-### Plan — Replace (with destroy warning)
-
-```
-## 📋 Changes found for `plat-ue2-sandbox`
-
-![Terraform](https://img.shields.io/badge/Terraform-Plan-007bff) ![](https://img.shields.io/badge/-Create%20(1)-28a745) ![](https://img.shields.io/badge/-Modify%20(1)-FFC107) ![](https://img.shields.io/badge/-Remove%20(2)-dc3545) ![](https://img.shields.io/badge/-Replace%20(1)-dc3545)
-
-> [!CAUTION]
-> **Terraform will delete resources!**
-
-**Plan:** **1** to add, **1** to change, **2** to destroy
-
-▸ Update (1)
-▸ Destroy (1)
-▸ Replace (1)
-▸ Terraform Plan Output
-```
-
-### Plan — Destroy
+### Package Structure
 
 ```
-## 📋 Changes found for `prod`
-
-![Terraform](https://img.shields.io/badge/Terraform-Destroy-dc3545) ![](https://img.shields.io/badge/-Remove%20(5)-dc3545)
-
-> [!CAUTION]
-> **Terraform will delete resources!**
-
-**Plan:** **5** to destroy
-
-▸ Destroy (5)
-▸ Terraform Plan Output
+├── main.go                  # Entry: flag/env parsing, parser selection, provider dispatch
+├── internal/
+│   ├── types.go             # Core types: Summary, ResourceChange, Action, Phase, OutputProvider
+│   ├── utils.go             # Env helpers: GetEnv, GetEnvBool, RequireEnv
+│   ├── hooks.go             # HookRegistry, HookEvent, HookFunc (lifecycle extension points)
+│   ├── output.go            # WriteGHASummary, WritePRComment, FindPRForBranch
+│   ├── parser/
+│   │   ├── text.go          # Regex-based parsing of terraform stdout
+│   │   └── json.go          # Structured parsing via terraform-json
+│   ├── render/
+│   │   ├── renderer.go      # Markdown generation from Summary
+│   │   └── templates.go     # Badge/template strings
+│   └── providers/
+│       ├── base.go          # Shared no-op defaults
+│       ├── stdout.go        # Writes to stdout
+│       └── github.go        # Writes to GHA step summary or PR comment
+└── tests/
+    ├── parser_test.go        # Text parser: plan/apply/destroy/drift/no-changes
+    ├── parser_cidr_block_test.go  # CIDR edge cases for text parser
+    ├── json_parser_test.go   # JSON parser: all actions + invalid input
+    ├── renderer_test.go      # Renderer: all plan/apply scenarios
+    └── github_provider_test.go    # GitHub provider: GHA + PR comment output
 ```
 
-### Apply — Success
+### Data Flow
 
 ```
-## ✅ Changes applied successfully for `prod`
-
-![Terraform](https://img.shields.io/badge/Terraform-Apply-28a745) ![](https://img.shields.io/badge/-Create%20(3)-28a745)
-
-**Result:** **3** added
-
-▸ ✅ Created (3)       — each resource listed
-▸ Terraform Apply Output
+Input (stdin | TF_PLAN_FILE | TF_PLAN_JSON)
+  → parser/{text,json}.go  →  internal.Summary
+  → render/renderer.go     →  Markdown string
+  → providers/*.go         →  OutputProvider.WriteSummary()
 ```
 
-### Apply — Partial Failure
+### Key Types (`internal/types.go`)
 
-```
-## ❌ Apply failed for `prod`
+| Type             | Values                                                               | Purpose                         |
+| ---------------- | -------------------------------------------------------------------- | ------------------------------- |
+| `Phase`          | `plan` \| `apply`                                                    | Controls header + parsing logic |
+| `Action`         | `create` \| `update` \| `destroy` \| `replace` \| `read` \| `import` | Resource change classification  |
+| `OutputTarget`   | `stdout` \| `gha` \| `pr`                                            | Where output is written         |
+| `ResourceChange` | `{Address, Action, Success, Error, Timestamp}`                       | Single affected resource        |
+| `Summary`        | counts + resource lists + errors + warnings + metadata               | Central parsed result           |
 
-![Terraform](https://img.shields.io/badge/Terraform-Apply-dc3545) ![](https://img.shields.io/badge/-Create%20(2)-28a745) ![](https://img.shields.io/badge/-Failed%20(1)-dc3545)
+### OutputProvider Interface
 
-**Result:** **2** added, **1** failed
-
-▸ ✅ Created (2)       — resources that succeeded
-▸ ❌ Failed (1)        — open by default, shows resource + error
-▸ Terraform Apply Output
-```
-
-### No Changes
-
-```
-## ✅ No changes found for `dev`
-
-![Terraform](https://img.shields.io/badge/Terraform-Plan-007bff) ![](https://img.shields.io/badge/-No%20Changes-0366d6)
-
-Infrastructure is up-to-date. No changes needed.
+```go
+type OutputProvider interface {
+    WriteSummary(summary *Summary, markdown string) error
+    WriteOutputs(summary *Summary, markdown string) error
+    Name() string
+}
 ```
 
-## Build
+To add a provider: implement this interface, embed `BaseProvider`, register in the `switch` in `main.go`.
 
-### Default build (development version)
+### Parsing Strategy
+
+| Env Var        | Parser    | Notes                         |
+| -------------- | --------- | ----------------------------- |
+| `TF_PLAN_JSON` | `json.go` | Preferred — accurate counts   |
+| `TF_PLAN_FILE` | `text.go` | Saved stdout fallback         |
+| stdin          | `text.go` | Default; required for `apply` |
+
+### Exit Codes
+
+| Code | Meaning                                                |
+| ---- | ------------------------------------------------------ |
+| `0`  | Success, no errors                                     |
+| `1`  | Terraform errors or failures detected                  |
+| `2`  | Changes detected (only when `TF_EXIT_ON_CHANGES=true`) |
+
+## Build & Test
 
 ```bash
-go build -o tf-summarize .
+make build                              # dev build
+make build-versioned VERSION=1.0.0     # with version injection
+go test ./...                          # run all tests
+gofmt -w .                             # format before committing
 ```
-
-Or using the Makefile:
-
-```bash
-make build
-```
-
-### Build with version injection
-
-To embed a version at build time, use the `-ldflags` flag:
-
-```bash
-go build -ldflags "-X main.Version=1.0.0" -o tf-summarize .
-```
-
-Or using the Makefile with a VERSION variable:
-
-```bash
-make build-versioned VERSION=1.0.0
-```
-
-### Display version
-
-```bash
-./tf-summarize --version
-```
-
-### Display help
-
-```bash
-./tf-summarize --help
-```
-
-### Release automation
-
-For automated releases with version injection, you can use GitHub Actions with ldflags:
-
-```yaml
-- name: Build Release
-  run: |
-    VERSION=${{ github.ref_name }} make build-versioned
-    # Creates binary with version from git tag (e.g., v1.0.0)
-```
-
-This allows you to:
-- Tag releases in git: `git tag v1.0.0`
-- Automatically inject version during CI/CD builds
-- Display version info with `--version` flag
 
 ## Releases
 
-Releases are automated via GitHub Actions using semantic versioning and [conventional commits](https://www.conventionalcommits.org/).
+Automated via GitHub Actions using [conventional commits](https://www.conventionalcommits.org/):
 
-### How Releases Work
-
-When you push commits to `main`, the workflow automatically:
-1. Analyzes commit messages
-2. Determines version bump (major, minor, or patch)
-3. Builds Linux x86_64 binary with version injected
-4. Creates git tag and GitHub release
-5. Generates changelog from commits
-
-### Version Bumping
-
-| Commit Type | Version | Example |
-|-------------|---------|---------|
-| `feat:` | Minor | `feat: add new output format` |
-| `fix:` | Patch | `fix: handle edge case` |
-| `perf:` | Patch | `perf: optimize parser` |
-| `refactor:` | Patch | `refactor: simplify logic` |
-| `feat!:` or `BREAKING CHANGE` | Major | `feat!: restructure API` |
-| `docs:`, `style:`, `test:`, `chore:` | No release | Internal changes |
-
-### Making a Release
-
-Just push commits with conventional format:
+| Prefix                       | Bump       |
+| ---------------------------- | ---------- |
+| `feat:`                      | Minor      |
+| `fix:`, `perf:`, `refactor:` | Patch      |
+| `feat!:` / `BREAKING CHANGE` | Major      |
+| `docs:`, `chore:`, `test:`   | No release |
 
 ```bash
-# Patch release (1.0.0 → 1.0.1)
-git commit -m "fix: handle edge case in parser"
-git push origin main
-
-# Minor release (1.0.0 → 1.1.0)
-git commit -m "feat: add new output format"
-git push origin main
-
-# Major release (1.0.0 → 2.0.0)
-git commit -m "feat!: restructure API"
-git push origin main
-```
-
-### Install Releases
-
-Binaries are available for Linux x86_64 at: https://github.com/jomakori/TF_summarize/releases
-
-```bash
-# Install and run
 go install github.com/jomakori/TF_summarize@latest
-tf-summarize --version
 ```
 
-<<<<<<< HEAD
-=======
-## Architecture Enhancements (v2.0)
+## Contributing
 
-### JSON Plan Parsing
-- Structured parsing of `terraform show -json` output for accurate resource change detection
-- Fallback to text parsing for backward compatibility
-- Handles all resource actions: create, update, delete, replace, read, import
+### Prerequisites
+- Go 1.24.2+
 
-### Provider Abstraction
-- Pluggable output providers for extensibility
-- Built-in providers: `stdout`, `github` (GHA + PR comments)
-- Easy to add custom providers by implementing the `OutputProvider` interface
-
-### Modular Rendering
-- Split rendering into focused functions:
-  - `RenderSummary()` — header, badges, counts
-  - `RenderDetails()` — resource lists
-  - `RenderOutputs()` — terraform outputs
-  - `RenderRawOutput()` — full terraform output
-  - `RenderFull()` — all sections separately
-- Enables flexible output composition
-
-### Enhanced Types
-- `ResourceChange` now includes timestamps and extensible details map
-- `Summary` tracks execution errors and parsing source (JSON vs text)
-- `RenderOutput` struct for structured rendering results
->>>>>>> main
-
-## Test
-
+### Setup
 ```bash
-go test ./...
+go mod download
+make build
 ```
 
-### Test Coverage
-- Text parsing: plan/apply success, failures, destroys, no changes, drift detection
-- JSON parsing: create, update, delete, replace, no changes, invalid JSON
-- Rendering: all plan/apply scenarios with proper badge and section formatting
+**Commit format** — uses [conventional commits](https://www.conventionalcommits.org/) to drive automated releases
