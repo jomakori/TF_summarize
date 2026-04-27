@@ -181,12 +181,12 @@ Plan: 1 to add, 1 to change, 1 to destroy.`
 	assertContains(t, out, "Terraform Plan Output")
 	assertContains(t, out, "<details>")
 	assertContains(t, out, "```diff")
-	
+
 	// Verify color codes are applied (diff markers should be present)
 	assertContains(t, out, "+ resource")
 	assertContains(t, out, "- resource")
 	assertContains(t, out, "! resource")
-	
+
 	// Verify plan summary is included
 	assertContains(t, out, "Plan: 1 to add, 1 to change, 1 to destroy")
 }
@@ -215,11 +215,11 @@ Apply complete! Resources: 1 added, 0 changed, 1 destroyed.`
 	assertContains(t, out, "Terraform Apply Output")
 	assertContains(t, out, "<details>")
 	assertContains(t, out, "```diff")
-	
+
 	// Verify color codes are applied
 	assertContains(t, out, "+ module.s3_bucket")
 	assertContains(t, out, "- module.rds")
-	
+
 	// Verify apply complete message is included
 	assertContains(t, out, "Apply complete!")
 }
@@ -524,6 +524,44 @@ module.network.provider_vpc.main: Creation complete after 1s [id=vpc-test123]
 	assertContains(t, out, "- ╵")
 	// Lines inside error block should be prefixed with - for red highlighting
 	assertContains(t, out, "- │ Error:")
+}
+
+// TestPrePlanErrorNoBadges verifies that when errors prevent the plan from being generated
+func TestPrePlanErrorNoBadges(t *testing.T) {
+	s := &internal.Summary{
+		Phase:     internal.PhasePlan,
+		Workspace: "tf_jmakori/oci_maklab_base0",
+		Errors:    []string{"Error acquiring the state lock"},
+		RawOutput: `╷
+│ Error: Error acquiring the state lock
+│
+│ Error message: workspace already locked (lock ID: "tf_jmakori/oci_maklab_base0")
+│ Lock Info:
+│   ID:        4e660b74-07dc-a539-6d6e-ddf7d416ae50
+│   Operation: OperationTypePlan
+│   Who:       runner@runnervmeorf1
+╵`,
+	}
+
+	out := render.Render(s)
+
+	// Error alert must be present
+	assertContains(t, out, "> [!ERROR]")
+	assertContains(t, out, "Error acquiring the state lock")
+
+	// Raw output collapsible must be present
+	assertContains(t, out, "<details>")
+	assertContains(t, out, "Terraform Plan Output")
+
+	// Badges must NOT be present — no plan was produced
+	assertNotContains(t, out, "img.shields.io")
+
+	// Summary line must NOT be present
+	assertNotContains(t, out, "Infrastructure is up-to-date")
+	assertNotContains(t, out, "No changes needed")
+	assertNotContains(t, out, "**Plan:**")
+
+	t.Logf("Rendered output:\n%s", out)
 }
 
 func assertContains(t *testing.T, haystack, needle string) {

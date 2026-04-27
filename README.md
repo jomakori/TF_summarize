@@ -194,3 +194,9 @@ make build
 ```
 
 **Commit format** — uses [conventional commits](https://www.conventionalcommits.org/) to drive automated releases
+
+### Guidelines
+
+- Tests — all code additions or tweaks must include tests; run `go test ./...` before opening a PR
+- Comments — only add comments where context is genuinely unclear; keep them concise single-liners
+- DRY & KISS — keep code simple and avoid duplication; fix existing implementations rather than layering on top of them

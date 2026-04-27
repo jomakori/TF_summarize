@@ -50,6 +50,16 @@ func writeError(b *strings.Builder, context string, message string, target inter
 	writeMessage(b, MessageError, context, message, target)
 }
 
+// isPrePlanError returns true when errors prevented the plan from being generated —
+func isPrePlanError(s *internal.Summary) bool {
+	if len(s.Errors) == 0 {
+		return false
+	}
+	return s.ToAdd == 0 && s.ToChange == 0 && s.ToDestroy == 0 && s.ToImport == 0 &&
+		len(s.Creates) == 0 && len(s.Updates) == 0 && len(s.Destroys) == 0 &&
+		len(s.Replaces) == 0 && len(s.Imports) == 0
+}
+
 // Render produces a complete markdown summary for the given Summary.
 func Render(s *internal.Summary) string {
 	output := RenderFull(s)
@@ -169,6 +179,10 @@ func writeHeader(b *strings.Builder, s *internal.Summary) {
 }
 
 func writeBadges(b *strings.Builder, s *internal.Summary) {
+	if isPrePlanError(s) {
+		return // skip badges — errors prevented the plan from being generated
+	}
+
 	var badges []string
 
 	phaseBadge := "Plan"
@@ -266,6 +280,10 @@ func writeErrors(b *strings.Builder, s *internal.Summary) {
 }
 
 func writeSummaryLine(b *strings.Builder, s *internal.Summary) {
+	if isPrePlanError(s) {
+		return // skip summary line — errors prevented the plan from being generated
+	}
+
 	if s.Phase == internal.PhaseApply {
 		writeApplySummaryLine(b, s)
 		return
