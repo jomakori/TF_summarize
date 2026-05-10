@@ -12,7 +12,7 @@ type MessageType int
 
 const (
 	// MessageError represents an error message.
-	// GHA: ::error::, Markdown: > [!ERROR]
+	// GHA: ::error::, Markdown: > [!CAUTION]
 	MessageError MessageType = iota
 	// MessageWarning represents a warning message.
 	// GHA: ::warning::, Markdown: > [!WARNING]
@@ -25,13 +25,13 @@ const (
 	MessageCaution
 )
 
-// writeMessage outputs a message with markdown alert formatting (> [!ERROR], > [!WARNING], > [!NOTE], > [!CAUTION]).
+// writeMessage outputs a message with markdown alert formatting (> [!CAUTION], > [!WARNING], > [!NOTE]).
 func writeMessage(b *strings.Builder, msgType MessageType, context, message string, target internal.OutputTarget) {
 	// Markdown alert
 	var alertType string
 	switch msgType {
 	case MessageError:
-		alertType = "ERROR"
+		alertType = "CAUTION"
 	case MessageWarning:
 		alertType = "WARNING"
 	case MessageNotice:

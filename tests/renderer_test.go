@@ -383,7 +383,7 @@ func TestPlanWithDriftAndModify(t *testing.T) {
 	assertNotContains(t, out, "::warning::")
 
 	// Verify error message
-	assertContains(t, out, "> [!ERROR]")
+	assertContains(t, out, "> [!CAUTION]")
 	assertContains(t, out, "Invalid function argument on outputs.tf line 6")
 
 	// Verify modify section uses ! prefix (standard diff notation for modifications)
@@ -401,7 +401,7 @@ func TestPlanWithDriftAndModify(t *testing.T) {
 	assertContains(t, out, "Terraform Plan Output")
 }
 
-// Issue 3A: Test that failed resources use ERROR callout for red highlighting
+// Issue 3A: Test that failed resources use CAUTION callout for red highlighting
 func TestFailedResourcesUseErrorCallout(t *testing.T) {
 	s := &internal.Summary{
 		Phase:     internal.PhaseApply,
@@ -413,8 +413,8 @@ func TestFailedResourcesUseErrorCallout(t *testing.T) {
 
 	out := render.Render(s)
 
-	// Should contain the ERROR callout for red highlighting (not CAUTION - that's for warnings)
-	assertContains(t, out, "> [!ERROR]")
+	// Should contain the CAUTION callout for red highlighting
+	assertContains(t, out, "> [!CAUTION]")
 	assertContains(t, out, "Failed to create key")
 	assertContains(t, out, "provider_api_key.auth_key")
 }
@@ -433,8 +433,8 @@ func TestGenericExitCodeMessagesFiltered(t *testing.T) {
 
 	out := render.Render(s)
 
-	// Real errors should be displayed with ERROR callout
-	assertContains(t, out, "> [!ERROR]")
+	// Real errors should be displayed with CAUTION callout
+	assertContains(t, out, "> [!CAUTION]")
 	assertContains(t, out, "provider credentials are empty")
 
 	// Generic exit code messages should be filtered out
@@ -442,46 +442,33 @@ func TestGenericExitCodeMessagesFiltered(t *testing.T) {
 	assertNotContains(t, out, "exited with code 2")
 }
 
-// Test that errors use [!ERROR] callout, NOT [!CAUTION]
-func TestErrorsUseErrorCalloutNotCaution(t *testing.T) {
+// Test that errors use [!CAUTION] callout, NOT [!WARNING]
+func TestErrorsUseCautionCalloutNotWarning(t *testing.T) {
 	s := &internal.Summary{
 		Phase:     internal.PhasePlan,
 		Workspace: "test",
 		ToAdd:     6,
 		Errors: []string{
 			"Unable to determine network device. Exiting.",
-			"Tailscale installation script failed. Retry attempt 1",
-			"Tailscale installation could not be verified. Retry attempt 1",
-		},
-		Creates: []internal.ResourceChange{
-			{Address: "provider_secret.auth_key", Action: internal.ActionCreate},
-			{Address: "provider_api_key.vm_auth_key", Action: internal.ActionCreate},
+			"Error: Unable to determine network device. Use one or more of the -net= options.",
+			"Terraform exited with code 1.",
 		},
 	}
 
 	out := render.Render(s)
 
-	// Errors should use [!ERROR] callout
-	assertContains(t, out, "> [!ERROR]")
-	assertContains(t, out, "Unable to determine network device")
-	assertContains(t, out, "Tailscale installation script failed")
-	assertContains(t, out, "Tailscale installation could not be verified")
+	// Errors should use [!CAUTION] callout
+	assertContains(t, out, "> [!CAUTION]")
 
-	// Count occurrences of [!ERROR] - should be 3 (one for each error)
-	errorCount := strings.Count(out, "> [!ERROR]")
-	if errorCount != 3 {
-		t.Errorf("expected 3 [!ERROR] callouts, got %d", errorCount)
+	// Should not contain generic exit code messages
+	assertNotContains(t, out, "exited with code 1.")
+
+	// Count occurrences of [!CAUTION] - should be 2 (one for each non-filtered error)
+	// "Terraform exited with code 1." is filtered out, so only 2 errors remain
+	errorCount := strings.Count(out, "> [!CAUTION]")
+	if errorCount != 2 {
+		t.Errorf("expected 2 [!CAUTION] callouts, got %d", errorCount)
 	}
-
-	// [!CAUTION] should NOT be used for errors (only for warnings like "will delete resources")
-	// Since we have no destroys, there should be no [!CAUTION]
-	cautionCount := strings.Count(out, "> [!CAUTION]")
-	if cautionCount != 0 {
-		t.Errorf("expected 0 [!CAUTION] callouts for errors, got %d.\nOutput:\n%s", cautionCount, out)
-	}
-
-	// Print output for visual inspection
-	t.Logf("Rendered output:\n%s", out)
 }
 
 // Issue 3B: Test that error blocks in raw output are highlighted in red
@@ -546,7 +533,7 @@ func TestPrePlanErrorNoBadges(t *testing.T) {
 	out := render.Render(s)
 
 	// Error alert must be present
-	assertContains(t, out, "> [!ERROR]")
+	assertContains(t, out, "> [!CAUTION]")
 	assertContains(t, out, "Error acquiring the state lock")
 
 	// Raw output collapsible must be present
@@ -660,8 +647,8 @@ module.compute.data.provider_shapes.current: Read complete after 0s [id=shapes-1
 	assertContains(t, out, "- │   on main.tf line 91")
 	assertContains(t, out, "- │ API token invalid (401)")
 
-	// Test 5: Failed resources section should use ERROR callout (not CAUTION - that's for warnings)
-	assertContains(t, out, "> [!ERROR]")
+	// Test 5: Failed resources section should use CAUTION callout
+	assertContains(t, out, "> [!CAUTION]")
 	assertContains(t, out, "provider_api_key.auth_key")
 
 	// Test 6: No Changes badge should NOT appear (we have creates and failures)
@@ -767,7 +754,7 @@ func TestErrorFormattingProviderDependent(t *testing.T) {
 			out := render.Render(s)
 
 			// All providers should have the markdown alert
-			assertContains(t, out, "> [!ERROR]")
+			assertContains(t, out, "> [!CAUTION]")
 			assertContains(t, out, "Test error message")
 
 			// No providers should have ::error:: commands (GHA commands removed)
@@ -809,7 +796,7 @@ func TestApplyFailureFormattingProviderDependent(t *testing.T) {
 			out := render.Render(s)
 
 			// All providers should have the markdown alert
-			assertContains(t, out, "> [!ERROR]")
+			assertContains(t, out, "> [!CAUTION]")
 			assertContains(t, out, "Instance creation failed")
 
 			// No providers should have ::error:: commands (GHA commands removed)
