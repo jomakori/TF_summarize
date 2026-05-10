@@ -31,14 +31,47 @@ var (
 	applyErrorRe      = regexp.MustCompile(`(?:^│\s*)?Error:\s+(.+)|^::error::(.+)`)
 	applyResultRe     = regexp.MustCompile(`Apply complete!\s+Resources:\s+(\d+)\s+added,\s+(\d+)\s+changed,\s+(\d+)\s+destroyed`)
 	errorResourceRe   = regexp.MustCompile(`with\s+(\S+),`)
-	driftRe           = regexp.MustCompile(`drift|Objects have changed outside of Terraform`)
-	warningRe         = regexp.MustCompile(`Warning:\s+(.+)`)
+	driftRe  = regexp.MustCompile(`drift|Objects have changed outside of Terraform`)
+	msgRe    = regexp.MustCompile(`(Warning|Caution|Note|Error):\s+(.+)`)
+	msgLineRe = regexp.MustCompile(`^\s+[│╷ ]\s*(.+)$|^\s{2,}(.+)$`)
 	noChangesRe       = regexp.MustCompile(`No changes\.\s+|Your infrastructure matches the configuration`)
 	compactResourceRe = regexp.MustCompile(`^\s+([+\-~])\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?(?:\.[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])?)+)$`)
 	// Output changes: "+ output_name = value" or "- output_name = value" or "~ output_name = value"
 	outputChangeRe    = regexp.MustCompile(`^\s*([+\-~])\s+(\w+)\s+=\s+(.+)$`)
 	outputsSectionRe  = regexp.MustCompile(`Changes to Outputs:`)
 )
+
+// msgCapture holds state for multi-line message context capture
+type msgCapture struct {
+	lastMsg     string
+	msgType     string // "Warning", "Caution", "Note", "Error"
+}
+
+// isContextLine checks if line is a continuation of message context
+func isContextLine(line string) bool {
+	return strings.HasPrefix(line, " ") || strings.HasPrefix(line, "│") || strings.HasPrefix(line, "╷")
+}
+
+// flushMessage stores the captured message to the summary
+func flushMessage(c *msgCapture, s *internal.Summary, lastStartedResource string, completedResources map[string]bool) {
+	if c.lastMsg == "" {
+		return
+	}
+
+	switch c.msgType {
+	case "Warning":
+		s.Warnings = append(s.Warnings, c.lastMsg)
+	case "Caution", "Note":
+		s.Warnings = append(s.Warnings, c.lastMsg)
+	case "Error":
+		s.Errors = append(s.Errors, c.lastMsg)
+		if s.ApplyError == "" {
+			s.ApplyError = c.lastMsg
+		}
+	}
+	c.lastMsg = ""
+	c.msgType = ""
+}
 
 // Parse reads terraform plan or apply output and returns a Summary.
 func Parse(input string, phase internal.Phase, workspace string, isDestroyPlan bool) (*internal.Summary, error) {
@@ -53,12 +86,46 @@ func Parse(input string, phase internal.Phase, workspace string, isDestroyPlan b
 	scanner := bufio.NewScanner(strings.NewReader(cleanInput))
 
 	var lastStartedResource string
-	var lastError string
+	var msgCapture msgCapture
 	completedResources := make(map[string]bool)
 	inOutputsSection := false
 
 	for scanner.Scan() {
 		line := scanner.Text()
+
+		// Handle multi-line message context capture
+		if msgCapture.lastMsg != "" {
+			// Check for resource address first (even on indented lines)
+			if msgCapture.msgType == "Error" {
+				if m := errorResourceRe.FindStringSubmatch(line); len(m) > 1 {
+					addr := internal.StripANSI(m[1])
+					if !internal.ContainsResourceAddr(s.Failures, addr) {
+						s.Failures = append(s.Failures, internal.ResourceChange{
+							Address: addr,
+							Action:  inferActionFromError(msgCapture.lastMsg),
+							Success: false,
+							Error:   msgCapture.lastMsg,
+						})
+					}
+					s.Errors = append(s.Errors, msgCapture.lastMsg)
+					if s.ApplyError == "" {
+						s.ApplyError = msgCapture.lastMsg
+					}
+					msgCapture.lastMsg = ""
+					msgCapture.msgType = ""
+					continue
+				}
+			}
+			// Otherwise, treat as context continuation (including empty lines)
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || isContextLine(line) {
+				if trimmed != "" {
+					msgCapture.lastMsg += "\n" + trimmed
+				}
+				continue
+			}
+			flushMessage(&msgCapture, s, lastStartedResource, completedResources)
+		}
 
 		// Check for "Changes to Outputs:" section
 		if outputsSectionRe.MatchString(line) {
@@ -95,39 +162,27 @@ func Parse(input string, phase internal.Phase, workspace string, isDestroyPlan b
 			s.DriftDetected = true
 		}
 
-		if m := warningRe.FindStringSubmatch(line); len(m) > 1 {
-			s.Warnings = append(s.Warnings, strings.TrimSpace(m[1]))
+		// Centralized message parsing (Warning, Caution, Note, Error)
+		if m := msgRe.FindStringSubmatch(line); len(m) > 2 {
+			msgCapture.msgType = m[1]
+			msgCapture.lastMsg = strings.TrimSpace(m[2])
+			continue
 		}
 
-		if m := applyErrorRe.FindStringSubmatch(line); len(m) > 1 {
-			// Handle multiple capture groups - use first non-empty match
-			var errMsg string
-			if m[1] != "" {
-				errMsg = strings.TrimSpace(m[1])
-			} else if len(m) > 2 && m[2] != "" {
-				errMsg = strings.TrimSpace(m[2])
-			}
-			if errMsg != "" {
-				lastError = errMsg
-				s.Errors = append(s.Errors, lastError)
-				if s.ApplyError == "" {
-					s.ApplyError = lastError
+		// Legacy error pattern for additional coverage
+		if msgCapture.msgType != "Error" {
+			if m := applyErrorRe.FindStringSubmatch(line); len(m) > 1 {
+				var errMsg string
+				if m[1] != "" {
+					errMsg = strings.TrimSpace(m[1])
+				} else if len(m) > 2 && m[2] != "" {
+					errMsg = strings.TrimSpace(m[2])
 				}
-			}
-		}
-
-		if lastError != "" {
-			if m := errorResourceRe.FindStringSubmatch(line); len(m) > 1 {
-				addr := internal.StripANSI(m[1])
-				if !internal.ContainsResourceAddr(s.Failures, addr) {
-					s.Failures = append(s.Failures, internal.ResourceChange{
-						Address: addr,
-						Action:  inferActionFromError(lastError),
-						Success: false,
-						Error:   lastError,
-					})
+				if errMsg != "" {
+					msgCapture.msgType = "Error"
+					msgCapture.lastMsg = errMsg
+					continue
 				}
-				lastError = ""
 			}
 		}
 
@@ -231,15 +286,18 @@ func Parse(input string, phase internal.Phase, workspace string, isDestroyPlan b
 		}
 	}
 
-	if lastError != "" && len(s.Failures) == 0 && lastStartedResource != "" {
-		if !completedResources[lastStartedResource] {
-			s.Failures = append(s.Failures, internal.ResourceChange{
-				Address: lastStartedResource,
-				Action:  inferActionFromError(lastError),
-				Success: false,
-				Error:   lastError,
-			})
+	if msgCapture.lastMsg != "" {
+		if msgCapture.msgType == "Error" && len(s.Failures) == 0 && lastStartedResource != "" {
+			if !completedResources[lastStartedResource] {
+				s.Failures = append(s.Failures, internal.ResourceChange{
+					Address: lastStartedResource,
+					Action:  inferActionFromError(msgCapture.lastMsg),
+					Success: false,
+					Error:   msgCapture.lastMsg,
+				})
+			}
 		}
+		flushMessage(&msgCapture, s, lastStartedResource, completedResources)
 	}
 
 	if phase == internal.PhaseApply && len(s.Errors) > 0 && !s.ApplySucceeded {

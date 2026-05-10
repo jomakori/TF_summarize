@@ -509,3 +509,106 @@ func TestParseGHAErrorAnnotation(t *testing.T) {
 		t.Error("expected ApplySucceeded to be false when GHA error annotation detected")
 	}
 }
+
+// Test for multi-line warning context
+const multiLineWarningOutput = `
+Terraform will perform the following actions:
+
+  # module.vm.oci_core_instance.instance[0] will be created
+  + resource "oci_core_instance" "instance" {
+      + availability_domain = "Kmhi:US-ASHBURN-1"
+    }
+
+╷
+│ Warning: Deprecated value used
+│ 
+│   on .terraform/modules/vcn/outputs.tf line 51, in output "ig_route_all_attributes":
+│   51:   value       = *** for k, v in oci_core_route_table.ig : k => v ***
+│ 
+│   The deprecation originates from module.vcn.oci_core_route_table.ig[0].route_rules[...].cidr_block
+│ 
+│   Deprecated resource attribute "route_rules[...].cidr_block" used. Refer to
+│   the provider documentation for details.
+│ ╵
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+`
+
+func TestParseMultiLineWarningContext(t *testing.T) {
+	s, err := parser.Parse(multiLineWarningOutput, internal.PhasePlan, "default", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Warnings) == 0 {
+		t.Fatal("expected at least one warning to be detected")
+	}
+
+	w := s.Warnings[0]
+	if !strings.Contains(w, "Deprecated value used") {
+		t.Errorf("expected warning to contain 'Deprecated value used', got: %s", w)
+	}
+	if !strings.Contains(w, ".terraform/modules/vcn/outputs.tf") {
+		t.Errorf("expected warning to contain file path, got: %s", w)
+	}
+	if !strings.Contains(w, "ig_route_all_attributes") {
+		t.Errorf("expected warning to contain output name, got: %s", w)
+	}
+	if !strings.Contains(w, "cidr_block") {
+		t.Errorf("expected warning to contain cidr_block, got: %s", w)
+	}
+}
+
+// Test for multi-line error context
+const multiLineErrorOutput = `
+╷
+│ Error: 500-InternalError, Out of host capacity.
+│ Suggestion: The service for this resource encountered an error. Please contact support for help with service: Core Instance
+│ Documentation: https://registry.terraform.io/providers/oracle/oci/latest/docs/resources/core_instance
+│ API Reference: https://docs.oracle.com/iaas/api/#/en/iaas/20160918/Instance/LaunchInstance
+│ Request Target: POST https://iaas.us-ashburn-1.oraclecloud.com/20160918/instances
+│ Provider version: 8.13.0, released on 2026-05-05.
+│ Service: Core Instance
+│ Operation Name: LaunchInstance
+│ OPC request ID: 359e27bf98c9c0c7a8a4277fb585ef06/4026CBC5B91B7BA5A301006A49414414/B15F7E5DC165B1C21609C404F061D94F
+│
+│
+│   with module.vm.oci_core_instance.instance[0],
+│   on .terraform/modules/vm/main.tf line 60, in resource "oci_core_instance" "instance":
+│   60: resource "oci_core_instance" "instance" ***
+│
+╵
+`
+
+func TestParseMultiLineErrorContext(t *testing.T) {
+	s, err := parser.Parse(multiLineErrorOutput, internal.PhaseApply, "default", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Errors) == 0 {
+		t.Fatal("expected at least one error to be detected")
+	}
+
+	e := s.Errors[0]
+	if !strings.Contains(e, "500-InternalError") {
+		t.Errorf("expected error to contain '500-InternalError', got: %s", e)
+	}
+	if !strings.Contains(e, "Out of host capacity") {
+		t.Errorf("expected error to contain 'Out of host capacity', got: %s", e)
+	}
+	if !strings.Contains(e, "Documentation:") {
+		t.Errorf("expected error to contain Documentation, got: %s", e)
+	}
+	if !strings.Contains(e, "OPC request ID:") {
+		t.Errorf("expected error to contain OPC request ID, got: %s", e)
+	}
+
+	if len(s.Failures) == 0 {
+		t.Fatal("expected at least one failure to be detected")
+	}
+
+	if s.Failures[0].Address != "module.vm.oci_core_instance.instance[0]" {
+		t.Errorf("expected failure address 'module.vm.oci_core_instance.instance[0]', got: %s", s.Failures[0].Address)
+	}
+}
