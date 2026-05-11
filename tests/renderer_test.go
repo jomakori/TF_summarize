@@ -413,8 +413,8 @@ func TestFailedResourcesUseErrorCallout(t *testing.T) {
 
 	out := render.Render(s)
 
-	// Should contain the CAUTION callout for red highlighting
-	assertContains(t, out, "> [!CAUTION]")
+	// Should contain error in code block (alert syntax doesn't work inside <details>)
+	assertContains(t, out, "```")
 	assertContains(t, out, "Failed to create key")
 	assertContains(t, out, "provider_api_key.auth_key")
 }
@@ -647,8 +647,8 @@ module.compute.data.provider_shapes.current: Read complete after 0s [id=shapes-1
 	assertContains(t, out, "- │   on main.tf line 91")
 	assertContains(t, out, "- │ API token invalid (401)")
 
-	// Test 5: Failed resources section should use CAUTION callout
-	assertContains(t, out, "> [!CAUTION]")
+	// Test 5: Failed resources section should use code block (alert syntax doesn't work in <details>)
+	assertContains(t, out, "```\nFailed to create resource\n```")
 	assertContains(t, out, "provider_api_key.auth_key")
 
 	// Test 6: No Changes badge should NOT appear (we have creates and failures)
@@ -795,8 +795,8 @@ func TestApplyFailureFormattingProviderDependent(t *testing.T) {
 
 			out := render.Render(s)
 
-			// All providers should have the markdown alert
-			assertContains(t, out, "> [!CAUTION]")
+			// Failures render inside <details>, so use a code block (alert syntax doesn't work in HTML)
+			assertContains(t, out, "```")
 			assertContains(t, out, "Instance creation failed")
 
 			// No providers should have ::error:: commands (GHA commands removed)

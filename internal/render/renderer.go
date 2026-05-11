@@ -360,9 +360,9 @@ func writeApplyResourceSections(b *strings.Builder, s *internal.Summary) {
 		b.WriteString(")</summary>\n\n")
 
 		for _, r := range s.Failures {
-			b.WriteString(fmt.Sprintf("**`%s`**\n", r.Address))
+			b.WriteString(fmt.Sprintf("**`%s`**\n\n", r.Address))
 			if r.Error != "" {
-				writeError(b, r.Address, r.Error, s.TargetProvider)
+				b.WriteString(fmt.Sprintf("```\n%s\n```\n\n", r.Error))
 			}
 		}
 
