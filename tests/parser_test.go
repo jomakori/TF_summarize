@@ -208,7 +208,7 @@ func TestParsePlanCreate(t *testing.T) {
 	assertCount(t, s.ToChange, 0, "to change")
 	assertCount(t, s.ToDestroy, 0, "to destroy")
 	assertCount(t, len(s.Creates), 3, "create resources")
-	
+
 	if len(s.Creates) > 0 {
 		assertAddress(t, s.Creates[0].Address, "module.s3_bucket.aws_s3_bucket.default[0]", "first create")
 	}
@@ -257,7 +257,7 @@ func TestParseApplyMixed(t *testing.T) {
 	}
 	assertCount(t, len(s.Creates), 1, "created resources")
 	assertCount(t, len(s.Failures), 1, "failures")
-	
+
 	if len(s.Failures) > 0 {
 		assertAddress(t, s.Failures[0].Address, "module.rds.aws_db_instance.main", "failure")
 		if s.Failures[0].Error == "" {
@@ -279,7 +279,7 @@ func TestParseApplyFail(t *testing.T) {
 		t.Error("expected at least one error")
 	}
 	assertCount(t, len(s.Failures), 1, "failures")
-	
+
 	if len(s.Failures) > 0 {
 		assertAddress(t, s.Failures[0].Address, "module.rds.aws_db_instance.main", "failure")
 	}
@@ -398,12 +398,217 @@ func TestParsePlanCreateWithANSI(t *testing.T) {
 	assertCount(t, s.ToDestroy, 0, "to destroy")
 	assertCount(t, len(s.Creates), 3, "create resources in test data")
 	assertCount(t, len(s.Reads), 2, "read resources")
-	
+
 	// Verify ANSI codes are stripped from addresses
 	if len(s.Creates) > 0 {
 		assertAddress(t, s.Creates[0].Address, "doppler_secret.tailscale_auth_key", "first create")
 	}
 	if len(s.Reads) > 0 {
 		assertAddress(t, s.Reads[0].Address, "module.compute_instance.data.oci_core_private_ips.private_ips[0]", "first read")
+	}
+}
+
+// Test for terraform CLI errors with box format (e.g., "Too many command line arguments")
+const cliErrorOutput = `
+╷
+│ Error: Too many command line arguments
+│
+│ Expected at most one positional argument.
+╵
+
+For more help on using this command, run:
+  terraform apply -help
+`
+
+func TestParseCLIError(t *testing.T) {
+	s, err := parser.Parse(cliErrorOutput, internal.PhaseApply, "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Errors) == 0 {
+		t.Error("expected CLI error to be detected")
+	}
+
+	if len(s.Errors) > 0 && !strings.Contains(s.Errors[0], "Too many command line arguments") {
+		t.Errorf("expected error message to contain 'Too many command line arguments', got: %s", s.Errors[0])
+	}
+
+	// Apply should not be marked as succeeded when there's a CLI error
+	if s.ApplySucceeded {
+		t.Error("expected ApplySucceeded to be false when CLI error detected")
+	}
+}
+
+// Test for terraform CLI errors without box format
+const cliErrorSimpleOutput = `
+Error: Too many command line arguments
+
+Expected at most one positional argument.
+`
+
+func TestParseCLIErrorSimple(t *testing.T) {
+	s, err := parser.Parse(cliErrorSimpleOutput, internal.PhaseApply, "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Errors) == 0 {
+		t.Error("expected CLI error to be detected")
+	}
+
+	if s.ApplySucceeded {
+		t.Error("expected ApplySucceeded to be false when CLI error detected")
+	}
+}
+
+// Test for terraform apply with invalid flag error
+const invalidFlagErrorOutput = `
+╷
+│ Error: Failed to parse command-line flags
+│
+│ flag provided but not defined: -invalid-flag
+╵
+`
+
+func TestParseInvalidFlagError(t *testing.T) {
+	s, err := parser.Parse(invalidFlagErrorOutput, internal.PhaseApply, "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Errors) == 0 {
+		t.Error("expected invalid flag error to be detected")
+	}
+
+	if s.ApplySucceeded {
+		t.Error("expected ApplySucceeded to be false when invalid flag error detected")
+	}
+}
+
+// Test for GitHub Actions error annotation format
+const ghaErrorAnnotationOutput = `
+::error::Terraform exited with code 1.
+`
+
+func TestParseGHAErrorAnnotation(t *testing.T) {
+	s, err := parser.Parse(ghaErrorAnnotationOutput, internal.PhaseApply, "test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Errors) == 0 {
+		t.Error("expected GHA error annotation to be detected")
+	}
+
+	if len(s.Errors) > 0 && !strings.Contains(s.Errors[0], "Terraform exited with code 1") {
+		t.Errorf("expected error message to contain 'Terraform exited with code 1', got: %s", s.Errors[0])
+	}
+
+	if s.ApplySucceeded {
+		t.Error("expected ApplySucceeded to be false when GHA error annotation detected")
+	}
+}
+
+// Test for multi-line warning context
+const multiLineWarningOutput = `
+Terraform will perform the following actions:
+
+  # module.vm.oci_core_instance.instance[0] will be created
+  + resource "oci_core_instance" "instance" {
+      + availability_domain = "Kmhi:US-ASHBURN-1"
+    }
+
+╷
+│ Warning: Deprecated value used
+│ 
+│   on .terraform/modules/vcn/outputs.tf line 51, in output "ig_route_all_attributes":
+│   51:   value       = *** for k, v in oci_core_route_table.ig : k => v ***
+│ 
+│   The deprecation originates from module.vcn.oci_core_route_table.ig[0].route_rules[...].cidr_block
+│ 
+│   Deprecated resource attribute "route_rules[...].cidr_block" used. Refer to
+│   the provider documentation for details.
+│ ╵
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+`
+
+func TestParseMultiLineWarningContext(t *testing.T) {
+	s, err := parser.Parse(multiLineWarningOutput, internal.PhasePlan, "default", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Warnings) == 0 {
+		t.Fatal("expected at least one warning to be detected")
+	}
+
+	w := s.Warnings[0]
+	if !strings.Contains(w, "Deprecated value used") {
+		t.Errorf("expected warning to contain 'Deprecated value used', got: %s", w)
+	}
+	if !strings.Contains(w, ".terraform/modules/vcn/outputs.tf") {
+		t.Errorf("expected warning to contain file path, got: %s", w)
+	}
+	if !strings.Contains(w, "ig_route_all_attributes") {
+		t.Errorf("expected warning to contain output name, got: %s", w)
+	}
+	if !strings.Contains(w, "cidr_block") {
+		t.Errorf("expected warning to contain cidr_block, got: %s", w)
+	}
+}
+
+// Test for multi-line error context
+const multiLineErrorOutput = `
+╷
+│ Error: 500-InternalError, Out of host capacity.
+│ Suggestion: The service for this resource encountered an error. Please contact support for help with service: Core Instance
+│ Documentation: https://registry.terraform.io/providers/oracle/oci/latest/docs/resources/core_instance
+│ API Reference: https://docs.oracle.com/iaas/api/#/en/iaas/20160918/Instance/LaunchInstance
+│ Request Target: POST https://iaas.us-ashburn-1.oraclecloud.com/20160918/instances
+│ Provider version: 8.13.0, released on 2026-05-05.
+│ Service: Core Instance
+│ Operation Name: LaunchInstance
+│ OPC request ID: 359e27bf98c9c0c7a8a4277fb585ef06/4026CBC5B91B7BA5A301006A49414414/B15F7E5DC165B1C21609C404F061D94F
+│
+│
+│   with module.vm.oci_core_instance.instance[0],
+│   on .terraform/modules/vm/main.tf line 60, in resource "oci_core_instance" "instance":
+│   60: resource "oci_core_instance" "instance" ***
+│
+╵
+`
+
+func TestParseMultiLineErrorContext(t *testing.T) {
+	s, err := parser.Parse(multiLineErrorOutput, internal.PhaseApply, "default", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(s.Errors) == 0 {
+		t.Fatal("expected at least one error to be detected")
+	}
+
+	e := s.Errors[0]
+	if !strings.Contains(e, "500-InternalError") {
+		t.Errorf("expected error to contain '500-InternalError', got: %s", e)
+	}
+	if !strings.Contains(e, "Out of host capacity") {
+		t.Errorf("expected error to contain 'Out of host capacity', got: %s", e)
+	}
+	if !strings.Contains(e, "Documentation:") {
+		t.Errorf("expected error to contain Documentation, got: %s", e)
+	}
+	if !strings.Contains(e, "OPC request ID:") {
+		t.Errorf("expected error to contain OPC request ID, got: %s", e)
+	}
+
+	if len(s.Failures) == 0 {
+		t.Fatal("expected at least one failure to be detected")
+	}
+
+	if s.Failures[0].Address != "module.vm.oci_core_instance.instance[0]" {
+		t.Errorf("expected failure address 'module.vm.oci_core_instance.instance[0]', got: %s", s.Failures[0].Address)
 	}
 }
